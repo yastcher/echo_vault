@@ -44,6 +44,27 @@ def test_detect_devices_auto(settings):
     assert mic == "alsa_input.pci-0000_00_1f.3.analog-stereo"
 
 
+def test_detect_devices_auto_legacy_keys(settings):
+    """Auto-detect should also work with legacy pactl keys (default_sink/default_source)."""
+    pactl_output = json.dumps(
+        {
+            "default_sink": "alsa_output.usb-stereo",
+            "default_source": "alsa_input.usb-stereo",
+        }
+    )
+
+    with (
+        patch("meetrec.recorder.shutil.which", return_value="/usr/bin/pactl"),
+        patch("meetrec.recorder.subprocess.run") as mock_run,
+    ):
+        mock_run.return_value = MagicMock(stdout=pactl_output, returncode=0)
+
+        monitor, mic = detect_devices(settings)
+
+    assert monitor == "alsa_output.usb-stereo.monitor"
+    assert mic == "alsa_input.usb-stereo"
+
+
 def test_detect_devices_explicit(tmp_vault):
     """Explicit device names should be returned without calling pactl."""
     s = Settings(

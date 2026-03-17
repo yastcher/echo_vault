@@ -41,7 +41,10 @@ def start(name):
         signal.pause()
     except KeyboardInterrupt:
         click.echo("\nStopping...", err=True)
-        _stop_and_process(recorder, settings)
+        try:
+            _stop_and_process(recorder, settings)
+        except KeyboardInterrupt:
+            click.echo("\nAborted during processing. Audio files kept in /tmp/meetrec/", err=True)
 
 
 @cli.command()
