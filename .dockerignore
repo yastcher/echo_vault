@@ -1,0 +1,15 @@
+.git/
+.github/
+.devcontainer/
+.claude/
+.idea/
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
+mongo_data/
+data/
+coverage.*
+.pytest_cache/
+.ruff_cache/

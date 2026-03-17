@@ -1,0 +1,49 @@
+[project]
+name = "meetrec"
+version = "0.1.0"
+description = "Local meeting audio recorder with transcription for Obsidian"
+readme = "README.md"
+authors = [{ name = "Yast", email = "yastcher@gmail.com" }]
+requires-python = ">=3.11"
+dependencies = [
+    "faster-whisper>=1.0.0",
+    "pydantic-settings>=2.0.0",
+    "click>=8.0.0",
+]
+
+[project.scripts]
+meetrec = "meetrec.cli:cli"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/meetrec"]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.9.0",
+    "pytest>=9.0.0",
+]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+exclude = [
+    ".claude",
+]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+fixable = ["ALL"]
+
+[tool.ruff.lint.isort]
+known-local-folder = ["meetrec", "tests"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

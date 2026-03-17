@@ -1,0 +1,49 @@
+{
+  "permissions": {
+    "defaultMode": "default",
+    "allow": [
+      "Read",
+      "Glob",
+      "Grep",
+      "Edit",
+      "Write",
+      "WebSearch",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:youtrack.jetbrains.com)",
+      "WebFetch(domain:mypy.readthedocs.io)",
+      "WebFetch(domain:pypi.org)",
+      "Skill(humanizer)",
+      "Bash(ls *)",
+      "Bash(uv sync*)",
+      "Bash(uv run jupyter*)",
+      "Bash(uv run python*)",
+      "Bash(uv run ruff:*)",
+      "Bash(uv run pytest:*)",
+      "Bash(uv pip:*)",
+      "Bash(python3*)",
+      "Bash(git * diff *)",
+      "Bash(git * status *)",
+      "Bash(git * log *)",
+      "Bash(git * ls-files *)",
+      "Bash(git * show *)",
+      "Bash(docker ps:*)",
+      "Bash(nvidia-smi:*)"
+    ],
+    "deny": [
+      "Bash(rm -rf*)",
+      "Bash(* rm *)",
+      "Bash(sudo*)",
+      "Bash(git push*)",
+      "Bash(git commit*)",
+      "Bash(git checkout*)",
+      "Bash(git switch*)",
+      "Bash(git reset*)",
+      "Bash(git clean*)",
+      "Bash(git stash*)",
+      "Bash(git rebase*)",
+      "Bash(git branch -D*)",
+      "Bash(git branch -d*)",
+      "Bash(git restore*)"
+    ]
+  }
+}
