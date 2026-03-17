@@ -2,6 +2,10 @@ import pytest
 
 from meetrec.settings import Settings
 
+pytest_plugins = [
+    "tests.fixtures",
+]
+
 
 @pytest.fixture
 def tmp_vault(tmp_path):

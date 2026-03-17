@@ -127,6 +127,38 @@ def test_diarize_returns_segments(tmp_vault):
     assert result[1].speaker == "SPEAKER_01"
 
 
+def test_diarize_handles_diarize_output(tmp_vault):
+    """Diarizer.diarize should handle DiarizeOutput (pyannote 4.x) wrapping Annotation."""
+    from meetrec.diarizer import Diarizer
+    from meetrec.settings import Settings
+
+    settings = Settings(vault_path=tmp_vault, hf_token="hf_fake_token", device="cpu")
+
+    mock_turn = MagicMock()
+    mock_turn.start = 0.0
+    mock_turn.end = 3.0
+
+    mock_annotation = MagicMock()
+    mock_annotation.itertracks.return_value = [(mock_turn, None, "SPEAKER_00")]
+
+    # Simulate DiarizeOutput: no itertracks, but has speaker_diarization
+    mock_diarize_output = MagicMock(spec=[])
+    mock_diarize_output.speaker_diarization = mock_annotation
+
+    with patch("pyannote.audio.Pipeline") as mock_pipeline_cls:
+        mock_pipeline = MagicMock()
+        mock_pipeline_cls.from_pretrained.return_value = mock_pipeline
+        mock_pipeline.return_value = mock_diarize_output
+
+        diarizer = Diarizer(settings)
+        from pathlib import Path
+
+        result = diarizer.diarize(Path("/fake/audio.wav"))
+
+    assert len(result) == 1
+    assert result[0].speaker == "SPEAKER_00"
+
+
 def test_diarize_cuda_fallback(tmp_vault, capsys):
     """Diarizer should fall back to CPU when CUDA is not available."""
     from meetrec.diarizer import Diarizer

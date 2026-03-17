@@ -18,6 +18,17 @@ class DiarizationSegment:
     end: float  # seconds
 
 
+def _unwrap_diarization(result):
+    """Extract Annotation from pyannote output.
+
+    pyannote 4.x returns DiarizeOutput (with .speaker_diarization),
+    older versions return Annotation directly (with .itertracks).
+    """
+    if hasattr(result, "itertracks"):
+        return result
+    return result.speaker_diarization
+
+
 class Diarizer:
     def __init__(self, settings: Settings) -> None:
         """Initialize pyannote pipeline.
@@ -72,8 +83,11 @@ class Diarizer:
             self._fallback_to_cpu()
             diarization = self._pipeline(audio_path, **kwargs)
 
+        # pyannote 4.x returns DiarizeOutput wrapping Annotation
+        annotation = _unwrap_diarization(diarization)
+
         segments = []
-        for turn, _, speaker in diarization.itertracks(yield_label=True):
+        for turn, _, speaker in annotation.itertracks(yield_label=True):
             segments.append(
                 DiarizationSegment(
                     speaker=speaker,
