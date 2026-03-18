@@ -36,6 +36,34 @@ def _format_duration_hms(seconds: float) -> str:
     return f"{hours:02d}:{minutes:02d}:{secs:02d}"
 
 
+def _merge_consecutive_speakers(
+    segments: list[Segment],
+) -> list[tuple[float, str | None, str]]:
+    """Merge consecutive segments from the same speaker into one block.
+
+    Returns list of (start_time, speaker, merged_text).
+    """
+    if not segments:
+        return []
+
+    merged: list[tuple[float, str | None, str]] = []
+    current_start = segments[0].start
+    current_speaker = segments[0].speaker
+    current_texts = [segments[0].text]
+
+    for seg in segments[1:]:
+        if seg.speaker == current_speaker:
+            current_texts.append(seg.text)
+        else:
+            merged.append((current_start, current_speaker, " ".join(current_texts)))
+            current_start = seg.start
+            current_speaker = seg.speaker
+            current_texts = [seg.text]
+
+    merged.append((current_start, current_speaker, " ".join(current_texts)))
+    return merged
+
+
 def format_markdown(
     segments: list[Segment],
     session_name: str,
@@ -78,18 +106,16 @@ def format_markdown(
         "",
     ]
 
-    for segment in segments:
-        # Skip segments shorter than 1 second (VAD artifacts)
-        if segment.end - segment.start < 1.0:
-            continue
+    # Merge consecutive segments from the same speaker
+    merged = _merge_consecutive_speakers([s for s in segments if s.end - s.start >= 1.0])
 
-        timecode = _format_timecode(segment.start)
+    for start_time, speaker, text in merged:
+        timecode = _format_timecode(start_time)
 
-        # Include speaker label if present (phase 2)
-        if segment.speaker:
-            lines.append(f"{timecode} **{segment.speaker}:** {segment.text}")
+        if speaker:
+            lines.append(f"{timecode} **{speaker}:** {text}")
         else:
-            lines.append(f"{timecode} {segment.text}")
+            lines.append(f"{timecode} {text}")
         lines.append("")
 
     return "\n".join(lines)

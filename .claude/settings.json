@@ -1,4 +1,5 @@
 {
+  "showThinkingSummaries": true,
   "permissions": {
     "defaultMode": "default",
     "allow": [

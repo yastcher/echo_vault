@@ -29,8 +29,8 @@ def test_format_markdown_has_frontmatter():
 def test_format_markdown_has_timecodes():
     """Each segment should have [HH:MM:SS] timecode."""
     segments = [
-        Segment(start=83.0, end=90.0, text="First segment."),
-        Segment(start=165.0, end=170.0, text="Second segment."),
+        Segment(start=83.0, end=90.0, text="First segment.", speaker="Speaker 1"),
+        Segment(start=165.0, end=170.0, text="Second segment.", speaker="Speaker 2"),
     ]
 
     result = format_markdown(
@@ -41,8 +41,10 @@ def test_format_markdown_has_timecodes():
         language="en",
     )
 
-    assert "[00:01:23] First segment." in result
-    assert "[00:02:45] Second segment." in result
+    assert "[00:01:23]" in result
+    assert "First segment." in result
+    assert "[00:02:45]" in result
+    assert "Second segment." in result
 
 
 def test_short_segments_filtered():
@@ -64,6 +66,34 @@ def test_short_segments_filtered():
     assert "Too short" not in result
     assert "Also too short" not in result
     assert "Long enough" in result
+
+
+def test_consecutive_speakers_merged():
+    """Consecutive segments from the same speaker should be merged."""
+    segments = [
+        Segment(start=0.0, end=5.0, text="Hello there.", speaker="You"),
+        Segment(start=5.0, end=10.0, text="How are you?", speaker="You"),
+        Segment(start=10.0, end=15.0, text="I'm fine.", speaker="Speaker 1"),
+        Segment(start=15.0, end=20.0, text="Thanks.", speaker="Speaker 1"),
+        Segment(start=20.0, end=25.0, text="Great.", speaker="You"),
+    ]
+
+    result = format_markdown(
+        segments=segments,
+        session_name="2026-03-17_14-30-00",
+        audio_rel_path="audio.wav",
+        duration_seconds=25.0,
+        language="en",
+    )
+
+    # Two "You" segments merged into one line
+    assert "**You:** Hello there. How are you?" in result
+    # Two "Speaker 1" segments merged
+    assert "**Speaker 1:** I'm fine. Thanks." in result
+    # Third "You" block is separate
+    assert "**You:** Great." in result
+    # Only 3 timecoded lines, not 5
+    assert result.count("[00:") == 3
 
 
 def test_save_to_vault_creates_files(settings, tmp_vault, tmp_path):

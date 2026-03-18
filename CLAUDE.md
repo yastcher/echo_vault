@@ -11,6 +11,7 @@ No web servers, databases, Docker, GUI.
 ## Safety rules
 
 - Всегда сначала надо решить причину проблемы, а не следствие.
+- Не подавлять warnings/errors/логи, не разобравшись в причине. Сначала спросить: это наш баг, баг зависимости, или информационное сообщение? Подавлять можно только осознанно и с объяснением почему.
 - Перед планированием надо продумать оптимальную систему типов.
 - Never delete or overwrite files without backup or user confirmation
 - Never delete files not tracked in git. Run `git ls-files <path>` before removing any file. If untracked — ask user.
