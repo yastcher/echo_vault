@@ -17,6 +17,54 @@ def test_segment_dataclass():
     assert len(segment.words) == 1
 
 
+def test_transcribe_stereo(settings):
+    """transcribe_stereo should call transcribe twice and assign speakers correctly."""
+    mock_seg_mic = MagicMock()
+    mock_seg_mic.start = 0.0
+    mock_seg_mic.end = 3.0
+    mock_seg_mic.text = " My speech "
+    mock_seg_mic.words = []
+
+    mock_seg_monitor = MagicMock()
+    mock_seg_monitor.start = 1.0
+    mock_seg_monitor.end = 4.0
+    mock_seg_monitor.text = " Their speech "
+    mock_seg_monitor.words = []
+
+    mock_info = MagicMock()
+    mock_info.language = "en"
+    mock_info.language_probability = 0.99
+    mock_info.duration = 5.0
+
+    with patch("meetrec.transcriber.WhisperModel") as mock_model_cls:
+        instance = mock_model_cls.return_value
+        # First call: mic, second call: monitor
+        instance.transcribe.side_effect = [
+            (iter([mock_seg_mic]), mock_info),
+            (iter([mock_seg_monitor]), mock_info),
+        ]
+
+        from meetrec.transcriber import Transcriber
+
+        transcriber = Transcriber(settings)
+        mic_segs, monitor_segs, _info = transcriber.transcribe_stereo(
+            Path("/fake/mic.wav"), Path("/fake/monitor.wav")
+        )
+
+    # Whisper called twice
+    assert instance.transcribe.call_count == 2
+
+    # Mic segments get speaker="You"
+    assert len(mic_segs) == 1
+    assert mic_segs[0].speaker == "You"
+    assert mic_segs[0].text == "My speech"
+
+    # Monitor segments keep speaker=None
+    assert len(monitor_segs) == 1
+    assert monitor_segs[0].speaker is None
+    assert monitor_segs[0].text == "Their speech"
+
+
 def test_transcribe_returns_segments(settings):
     """Transcriber should map faster-whisper output to Segment dataclasses."""
     mock_segment = MagicMock()

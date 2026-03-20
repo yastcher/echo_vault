@@ -1,6 +1,6 @@
 [project]
 name = "echo-vault"
-version = "0.1.0"
+version = "0.2.0"
 description = "Local meeting audio recorder with transcription for Obsidian"
 readme = "README.md"
 authors = [{ name = "Yast", email = "yastcher@gmail.com" }]

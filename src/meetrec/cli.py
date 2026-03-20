@@ -60,17 +60,22 @@ def stop():
 
 
 def _stop_and_process(recorder, settings, *, diarize=True):
-    """Stop recording and run the full processing pipeline."""
+    """Stop recording and run the full dual-channel processing pipeline."""
     click.echo("Stopping recording...", err=True)
     monitor_path, mic_path = recorder.stop()
 
-    from meetrec.audio import merge_channels
+    from meetrec.audio import merge_channels, split_channels_16k
+    from meetrec.diarizer import (
+        filter_silent_segments,
+        load_stereo_channels,
+        merge_channel_segments,
+    )
     from meetrec.formatter import format_markdown, save_audio_to_vault, save_markdown_to_vault
     from meetrec.transcriber import Transcriber
 
     click.echo("Merging audio channels...", err=True)
     output_dir = monitor_path.parent
-    stereo_path, mono_16k_path = merge_channels(monitor_path, mic_path, output_dir)
+    stereo_path, _mono_16k_path = merge_channels(monitor_path, mic_path, output_dir)
 
     session_name = monitor_path.parent.name
 
@@ -78,15 +83,37 @@ def _stop_and_process(recorder, settings, *, diarize=True):
     audio_dest = save_audio_to_vault(stereo_path, settings, session_name)
     click.echo(f"Audio saved: {audio_dest}", err=True)
 
+    # Load raw stereo channels for RMS filtering (before loudnorm)
+    mic_raw, monitor_raw, raw_sr = load_stereo_channels(stereo_path)
+
+    # Split stereo into per-channel mono 16kHz (with loudnorm for Whisper)
+    click.echo("Splitting channels...", err=True)
+    mic_16k, monitor_16k = split_channels_16k(stereo_path, output_dir)
+
+    # Transcribe each channel separately
     click.echo("Transcribing (this may take a few minutes)...", err=True)
     transcriber = Transcriber(settings)
-    segments, info = transcriber.transcribe(mono_16k_path)
+    mic_segments, monitor_segments, info = transcriber.transcribe_stereo(mic_16k, monitor_16k)
+
+    # Filter out Whisper hallucinations on silent portions (using raw RMS)
+    mic_segments = filter_silent_segments(mic_segments, mic_raw, raw_sr)
+    monitor_segments = filter_silent_segments(monitor_segments, monitor_raw, raw_sr)
 
     # Free GPU memory before diarization
     del transcriber
     _free_gpu_memory()
 
-    segments = _maybe_diarize(segments, settings, mono_16k_path, stereo_path, diarize=diarize)
+    # Diarize monitor channel to separate remote speakers
+    if diarize and settings.diarize and settings.hf_token:
+        click.echo("Diarizing speakers...", err=True)
+        from meetrec.diarizer import Diarizer, assign_speakers
+
+        diarizer = Diarizer(settings)
+        diarization_segments = diarizer.diarize(monitor_16k)
+        monitor_segments = assign_speakers(monitor_segments, diarization_segments)
+
+    # Merge both channels sorted by time
+    segments = merge_channel_segments(mic_segments, monitor_segments)
 
     audio_rel_path = f"{settings.attachments_dir}/{session_name}.wav"
 

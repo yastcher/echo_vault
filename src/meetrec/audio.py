@@ -111,6 +111,42 @@ def merge_channels(monitor_wav: Path, mic_wav: Path, output_dir: Path) -> tuple[
     return stereo_path, mono_16k_path
 
 
+def split_channels_16k(stereo_wav: Path, output_dir: Path) -> tuple[Path, Path]:
+    """Split stereo WAV into two mono 16kHz WAVs.
+
+    Each channel gets independent loudnorm before downsampling.
+    Returns (mic_16k_path, monitor_16k_path).
+    """
+    _check_ffmpeg()
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    mic_16k_path = output_dir / "mic_16k.wav"
+    monitor_16k_path = output_dir / "monitor_16k.wav"
+
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-y",
+            "-i",
+            str(stereo_wav),
+            "-filter_complex",
+            "channelsplit=channel_layout=stereo[left][right];"
+            "[left]loudnorm=I=-16:TP=-1.5:LRA=11,aresample=16000[mic];"
+            "[right]loudnorm=I=-16:TP=-1.5:LRA=11,aresample=16000[mon]",
+            "-map",
+            "[mic]",
+            str(mic_16k_path),
+            "-map",
+            "[mon]",
+            str(monitor_16k_path),
+        ],
+        capture_output=True,
+        check=True,
+    )
+
+    return mic_16k_path, monitor_16k_path
+
+
 def get_channel_count(audio_path: Path) -> int:
     """Return the number of channels in a WAV file."""
     with wave.open(str(audio_path), "rb") as wf:

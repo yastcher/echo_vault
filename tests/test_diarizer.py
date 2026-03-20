@@ -9,6 +9,7 @@ from meetrec.diarizer import (
     classify_segment_by_channel,
     identify_user_speaker,
     load_stereo_channels,
+    merge_channel_segments,
 )
 from meetrec.transcriber import Segment, Word
 from tests.fixtures import create_stereo_wav, create_stereo_wav_segments
@@ -25,6 +26,55 @@ def test_diarizer_init_without_token(tmp_vault):
 
     with pytest.raises(RuntimeError, match="HuggingFace token required"):
         Diarizer(settings)
+
+
+def test_diarizer_applies_clustering_threshold(tmp_vault):
+    """Diarizer should apply custom clustering_threshold to pipeline."""
+    from meetrec.diarizer import Diarizer
+    from meetrec.settings import Settings
+
+    settings = Settings(
+        vault_path=tmp_vault,
+        hf_token="hf_fake_token",
+        device="cpu",
+        clustering_threshold=0.85,
+    )
+
+    with patch("pyannote.audio.Pipeline") as mock_pipeline_cls:
+        mock_pipeline = MagicMock()
+        mock_pipeline_cls.from_pretrained.return_value = mock_pipeline
+        mock_pipeline.parameters.return_value = {
+            "clustering": {"method": "centroid", "min_cluster_size": 12, "threshold": 0.7},
+            "segmentation": {"min_duration_off": 0.0},
+        }
+
+        Diarizer(settings)
+
+    mock_pipeline.parameters.assert_called_once_with(instantiated=True)
+    mock_pipeline.instantiate.assert_called_once()
+    call_params = mock_pipeline.instantiate.call_args[0][0]
+    assert call_params["clustering"]["threshold"] == 0.85
+
+
+def test_diarizer_no_clustering_override_by_default(tmp_vault):
+    """Diarizer should not touch clustering params when threshold is None."""
+    from meetrec.diarizer import Diarizer
+    from meetrec.settings import Settings
+
+    settings = Settings(
+        vault_path=tmp_vault,
+        hf_token="hf_fake_token",
+        device="cpu",
+    )
+
+    with patch("pyannote.audio.Pipeline") as mock_pipeline_cls:
+        mock_pipeline = MagicMock()
+        mock_pipeline_cls.from_pretrained.return_value = mock_pipeline
+
+        Diarizer(settings)
+
+    mock_pipeline.parameters.assert_not_called()
+    mock_pipeline.instantiate.assert_not_called()
 
 
 def test_diarize_returns_segments(tmp_vault):
@@ -332,3 +382,45 @@ def test_assign_speakers_gap_handling():
 
     # Word at 2.5-3.0 is closer to SPEAKER_00 (ends at 2.0) than SPEAKER_01 (starts at 4.0)
     assert result[0].speaker == "Speaker 1"
+
+
+# --- merge_channel_segments ---
+
+
+def test_merge_channel_segments():
+    """Segments from both channels merged and sorted by start time."""
+    mic_segments = [
+        Segment(start=0.0, end=3.0, text="My first", speaker="You"),
+        Segment(start=5.0, end=7.0, text="My second", speaker="You"),
+    ]
+
+    monitor_segments = [
+        Segment(start=2.0, end=4.0, text="Their first", speaker="Speaker 1"),
+        Segment(start=6.0, end=8.0, text="Their second", speaker="Speaker 1"),
+    ]
+
+    result = merge_channel_segments(mic_segments, monitor_segments)
+
+    assert len(result) == 4
+    assert [s.start for s in result] == [0.0, 2.0, 5.0, 6.0]
+    assert result[0].speaker == "You"
+    assert result[1].speaker == "Speaker 1"
+    assert result[2].speaker == "You"
+    assert result[3].speaker == "Speaker 1"
+
+
+def test_merge_channel_segments_overlapping():
+    """Simultaneous speech: overlapping segments from both channels are kept."""
+    mic_segments = [
+        Segment(start=0.0, end=5.0, text="Talking over", speaker="You"),
+    ]
+
+    monitor_segments = [
+        Segment(start=2.0, end=6.0, text="Also talking", speaker="Speaker 1"),
+    ]
+
+    result = merge_channel_segments(mic_segments, monitor_segments)
+
+    assert len(result) == 2
+    assert result[0].speaker == "You"
+    assert result[1].speaker == "Speaker 1"

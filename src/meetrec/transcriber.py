@@ -115,6 +115,37 @@ class Transcriber:
 
         return segments, info_dict
 
+    def transcribe_stereo(
+        self, mic_16k: Path, monitor_16k: Path
+    ) -> tuple[list[Segment], list[Segment], dict]:
+        """Transcribe both channels separately.
+
+        Returns (mic_segments, monitor_segments, info).
+        mic_segments get speaker="You" automatically.
+        info from the channel with more total speech duration.
+        """
+        mic_segments, mic_info = self.transcribe(mic_16k)
+        monitor_segments, monitor_info = self.transcribe(monitor_16k)
+
+        # Assign speaker="You" to mic segments
+        mic_segments = [
+            Segment(
+                start=s.start,
+                end=s.end,
+                text=s.text,
+                words=s.words,
+                speaker="You",
+            )
+            for s in mic_segments
+        ]
+
+        # Pick info from channel with more speech
+        mic_speech = sum(s.end - s.start for s in mic_segments)
+        monitor_speech = sum(s.end - s.start for s in monitor_segments)
+        info = mic_info if mic_speech >= monitor_speech else monitor_info
+
+        return mic_segments, monitor_segments, info
+
     @staticmethod
     def _collect_segments(segments_iter) -> list[Segment]:
         """Iterate over faster-whisper segments and convert to dataclasses."""

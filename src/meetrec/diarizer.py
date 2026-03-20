@@ -51,6 +51,11 @@ class Diarizer:
             token=settings.hf_token,
         )
 
+        if settings.clustering_threshold is not None:
+            params = self._pipeline.parameters(instantiated=True)
+            params["clustering"]["threshold"] = settings.clustering_threshold
+            self._pipeline.instantiate(params)
+
         if settings.device == "cuda":
             try:
                 import torch
@@ -106,6 +111,76 @@ class Diarizer:
         self._pipeline.to(torch.device("cpu"))
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
+
+
+def _rms_for_range(
+    start: float,
+    end: float,
+    samples: np.ndarray,
+    sample_rate: int,
+) -> float:
+    """Compute RMS energy for a time range in samples array."""
+    sf = max(0, min(int(start * sample_rate), len(samples)))
+    ef = max(0, min(int(end * sample_rate), len(samples)))
+    if ef <= sf:
+        return 0.0
+    return float(np.sqrt(np.mean(samples[sf:ef] ** 2)))
+
+
+def filter_silent_segments(
+    segments: list[Segment],
+    channel_samples: np.ndarray,
+    sample_rate: int,
+    rms_threshold: float = 200.0,
+) -> list[Segment]:
+    """Remove segments (or parts of segments) where channel RMS is below threshold.
+
+    Uses raw (pre-loudnorm) channel samples so that normalization doesn't
+    inflate background noise above the threshold.
+
+    When word timestamps are available, filters at word level: drops individual
+    words with low RMS (crosstalk from other channel), keeps the rest, and
+    rebuilds the segment from surviving words. This prevents crosstalk fragments
+    like monitor audio bleeding into mic from contaminating real speech segments.
+
+    Segments without word timestamps are filtered at segment level.
+    """
+    result = []
+    for seg in segments:
+        if seg.words:
+            kept_words = [
+                w
+                for w in seg.words
+                if _rms_for_range(w.start, w.end, channel_samples, sample_rate) >= rms_threshold
+            ]
+            if not kept_words:
+                continue
+            result.append(
+                Segment(
+                    start=kept_words[0].start,
+                    end=kept_words[-1].end,
+                    text=" ".join(w.word.strip() for w in kept_words),
+                    words=kept_words,
+                    speaker=seg.speaker,
+                )
+            )
+        else:
+            rms = _rms_for_range(seg.start, seg.end, channel_samples, sample_rate)
+            if rms >= rms_threshold:
+                result.append(seg)
+
+    return result
+
+
+def merge_channel_segments(
+    mic_segments: list[Segment],
+    monitor_segments: list[Segment],
+) -> list[Segment]:
+    """Merge segments from both channels, sorted by start time.
+
+    Overlapping segments (simultaneous speech) are kept as-is.
+    """
+    return sorted(mic_segments + monitor_segments, key=lambda s: s.start)
 
 
 def load_stereo_channels(stereo_wav: Path) -> tuple[np.ndarray, np.ndarray, int]:

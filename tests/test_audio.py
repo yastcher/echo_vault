@@ -52,6 +52,34 @@ def test_convert_to_mono16k(tmp_path):
         assert wf.getframerate() == 16000
 
 
+@pytest.mark.skipif(not shutil.which("ffmpeg"), reason="ffmpeg required")
+def test_split_channels_16k(tmp_path):
+    """Split stereo into two mono 16kHz WAVs."""
+    from meetrec.audio import split_channels_16k
+    from tests.fixtures import create_stereo_wav
+
+    stereo = tmp_path / "stereo.wav"
+    output_dir = tmp_path / "output"
+
+    create_stereo_wav(
+        stereo, duration=1.0, sample_rate=48000, left_amplitude=0.8, right_amplitude=0.3
+    )
+
+    mic_16k, monitor_16k = split_channels_16k(stereo, output_dir)
+
+    assert mic_16k.exists()
+    assert monitor_16k.exists()
+
+    # Verify both are mono 16kHz
+    with wave.open(str(mic_16k), "rb") as wf:
+        assert wf.getnchannels() == 1
+        assert wf.getframerate() == 16000
+
+    with wave.open(str(monitor_16k), "rb") as wf:
+        assert wf.getnchannels() == 1
+        assert wf.getframerate() == 16000
+
+
 def test_empty_file_raises(tmp_path):
     """Empty WAV file should raise RuntimeError."""
     from meetrec.audio import merge_channels

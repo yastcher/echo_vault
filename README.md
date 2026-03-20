@@ -69,6 +69,7 @@ All settings via environment variables or `.env` file:
 | `MEETREC_HF_TOKEN` | *(empty)* | HuggingFace token for speaker diarization |
 | `MEETREC_DIARIZE` | `true` | Enable speaker diarization |
 | `MEETREC_MAX_SPEAKERS` | *(auto)* | Max speakers hint for pyannote |
+| `MEETREC_CLUSTERING_THRESHOLD` | *(pyannote default)* | Speaker clustering threshold (higher = fewer speakers, try 0.85 if over-segmented) |
 | `MEETREC_MEETINGS_DIR` | `meetings` | Subdirectory in vault for transcripts |
 | `MEETREC_ATTACHMENTS_DIR` | `attachments/audio` | Subdirectory in vault for audio files |
 | `MEETREC_BEAM_SIZE` | `5` | Whisper beam size |
@@ -94,14 +95,24 @@ Without the token, transcription works normally — just without speaker labels.
 
 ## How It Works
 
+### Live recording (dual-channel pipeline)
+
 1. **Recording** — parecord captures monitor + mic as separate WAV files
 2. **Merging** — ffmpeg creates stereo WAV (left=mic, right=monitor)
 3. **Audio saved** — stereo WAV copied to vault immediately
-4. **Normalization** — channels normalized independently (loudnorm) before mixing to mono 16kHz for Whisper, so quiet mic isn't drowned out by loud monitor
-5. **Transcription** — faster-whisper transcribes the normalized mono file
-6. **GPU memory freed** — Whisper model unloaded before diarization
-7. **Diarization** — pyannote identifies speakers, RMS energy on stereo channels determines which speaker is "You"
-8. **Output** — markdown with timecodes and speaker labels saved to vault
+4. **Channel splitting** — stereo split into two mono 16kHz WAVs, each independently normalized (loudnorm)
+5. **Dual transcription** — faster-whisper transcribes each channel separately: mic segments are labeled "You", monitor segments are labeled by pyannote
+6. **Hallucination filter** — segments where the raw channel RMS is below noise floor are dropped (catches Whisper hallucinations on silent portions)
+7. **GPU memory freed** — Whisper model unloaded before diarization
+8. **Diarization** — pyannote runs on monitor channel only to distinguish remote speakers ("Speaker 1", "Speaker 2", ...)
+9. **Merge** — segments from both channels combined and sorted by timestamp; overlapping segments (simultaneous speech) are preserved
+10. **Output** — markdown with timecodes and speaker labels saved to vault
+
+This dual-channel approach avoids mono mixing, which degrades both voices during simultaneous speech and can lose quiet-channel audio entirely.
+
+### Processing existing files
+
+`meetrec process` converts any audio file to mono 16kHz and runs the original single-channel pipeline (Whisper + pyannote on mono).
 
 CUDA is used when available; each model (Whisper, pyannote) runs sequentially to fit in limited VRAM. Automatic CPU fallback on OOM or missing CUDA libraries.
 

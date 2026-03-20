@@ -36,6 +36,7 @@ class Settings(BaseSettings):
     # Diarization
     diarize: bool = True
     max_speakers: int | None = None
+    clustering_threshold: float | None = None
 
 
 def get_settings() -> Settings:
