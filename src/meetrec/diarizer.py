@@ -3,6 +3,7 @@ import sys
 import wave
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 
@@ -19,7 +20,7 @@ class DiarizationSegment:
     end: float  # seconds
 
 
-def _unwrap_diarization(result):
+def _unwrap_diarization(result: Any) -> Any:
     """Extract Annotation from pyannote output.
 
     pyannote 4.x returns DiarizeOutput (with .speaker_diarization),
@@ -73,7 +74,7 @@ class Diarizer:
         Returns list of DiarizationSegment sorted by start time.
         Falls back to CPU if CUDA runs out of memory during inference.
         """
-        kwargs = {}
+        kwargs: dict[str, int] = {}
         if self._settings.max_speakers is not None:
             kwargs["max_speakers"] = self._settings.max_speakers
 
@@ -92,7 +93,7 @@ class Diarizer:
         # pyannote 4.x returns DiarizeOutput wrapping Annotation
         annotation = _unwrap_diarization(diarization)
 
-        segments = []
+        segments: list[DiarizationSegment] = []
         for turn, _, speaker in annotation.itertracks(yield_label=True):
             segments.append(
                 DiarizationSegment(
@@ -317,7 +318,7 @@ def assign_speakers(
         return list(segments)
 
     # Load stereo data once (not N times)
-    stereo_data = None
+    stereo_data: tuple[np.ndarray, np.ndarray, int] | None = None
     if stereo_wav is not None:
         with contextlib.suppress(ValueError, wave.Error):
             stereo_data = load_stereo_channels(stereo_wav)

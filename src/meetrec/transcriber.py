@@ -1,6 +1,8 @@
 import sys
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from faster_whisper import WhisperModel
 
@@ -70,7 +72,7 @@ class Transcriber:
             compute_type="int8",
         )
 
-    def transcribe(self, audio_path: Path) -> tuple[list[Segment], dict]:
+    def transcribe(self, audio_path: Path) -> tuple[list[Segment], dict[str, str | float]]:
         """Transcribe audio file.
 
         Returns (list of Segments, info dict with language/duration/etc).
@@ -107,7 +109,7 @@ class Transcriber:
         if not segments:
             print("Warning: No speech detected in audio", file=sys.stderr)
 
-        info_dict = {
+        info_dict: dict[str, str | float] = {
             "language": info.language,
             "language_probability": info.language_probability,
             "duration": info.duration,
@@ -117,7 +119,7 @@ class Transcriber:
 
     def transcribe_stereo(
         self, mic_16k: Path, monitor_16k: Path
-    ) -> tuple[list[Segment], list[Segment], dict]:
+    ) -> tuple[list[Segment], list[Segment], dict[str, str | float]]:
         """Transcribe both channels separately.
 
         Returns (mic_segments, monitor_segments, info).
@@ -147,7 +149,7 @@ class Transcriber:
         return mic_segments, monitor_segments, info
 
     @staticmethod
-    def _collect_segments(segments_iter) -> list[Segment]:
+    def _collect_segments(segments_iter: Iterable[Any]) -> list[Segment]:
         """Iterate over faster-whisper segments and convert to dataclasses."""
         segments: list[Segment] = []
         for seg in segments_iter:

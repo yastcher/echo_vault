@@ -7,8 +7,19 @@ import signal
 import subprocess
 import time
 from pathlib import Path
+from typing import TypedDict
 
 from meetrec.settings import Settings
+
+
+class SessionData(TypedDict):
+    pid_monitor: int
+    pid_mic: int
+    session_name: str
+    monitor_path: str
+    mic_path: str
+    started_at: str
+
 
 _DEFAULT_STATE_DIR = Path.home() / ".local" / "state" / "meetrec"
 
@@ -159,7 +170,7 @@ class Recorder:
         if not self._session_file.exists():
             raise RuntimeError("No recording in progress.")
 
-        session = json.loads(self._session_file.read_text())
+        session: SessionData = json.loads(self._session_file.read_text())
         pids = [session["pid_monitor"], session["pid_mic"]]
 
         # Send SIGTERM to both
@@ -179,7 +190,7 @@ class Recorder:
             return False
 
         try:
-            session = json.loads(self._session_file.read_text())
+            session: SessionData = json.loads(self._session_file.read_text())
         except (json.JSONDecodeError, KeyError):
             return False
 
@@ -193,7 +204,7 @@ class Recorder:
 
         return True
 
-    def get_session_info(self) -> dict | None:
+    def get_session_info(self) -> SessionData | None:
         """Return session info dict if recording, else None."""
         if not self.is_recording():
             return None

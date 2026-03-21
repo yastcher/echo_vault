@@ -65,6 +65,7 @@ def test_diarizer_no_clustering_override_by_default(tmp_vault):
         vault_path=tmp_vault,
         hf_token="hf_fake_token",
         device="cpu",
+        clustering_threshold=None,
     )
 
     with patch("pyannote.audio.Pipeline") as mock_pipeline_cls:

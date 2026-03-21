@@ -3,21 +3,26 @@ import signal
 import subprocess
 import tempfile
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import click
 
-from meetrec.settings import get_settings
+from meetrec.settings import Settings, get_settings
+
+if TYPE_CHECKING:
+    from meetrec.recorder import Recorder
+    from meetrec.transcriber import Segment
 
 
 @click.group()
-def cli():
+def cli() -> None:
     """meetrec — local meeting recorder for Obsidian."""
 
 
 @cli.command()
 @click.argument("name", required=False)
 @click.option("--no-diarize", is_flag=True, help="Skip speaker diarization")
-def start(name, no_diarize):
+def start(name: str | None, no_diarize: bool) -> None:
     """Start recording monitor source + microphone.
 
     Runs in foreground — press Ctrl+C to stop and transcribe.
@@ -49,7 +54,7 @@ def start(name, no_diarize):
 
 
 @cli.command()
-def stop():
+def stop() -> None:
     """Stop recording, transcribe, and save to vault."""
     settings = get_settings()
 
@@ -59,7 +64,7 @@ def stop():
     _stop_and_process(recorder, settings, diarize=True)
 
 
-def _stop_and_process(recorder, settings, *, diarize=True):
+def _stop_and_process(recorder: Recorder, settings: Settings, *, diarize: bool = True) -> None:
     """Stop recording and run the full dual-channel processing pipeline."""
     click.echo("Stopping recording...", err=True)
     monitor_path, mic_path = recorder.stop()
@@ -137,7 +142,7 @@ def _stop_and_process(recorder, settings, *, diarize=True):
 @click.argument("audio_file", type=click.Path(exists=True))
 @click.option("--name", default=None, help="Session name for output file")
 @click.option("--no-diarize", is_flag=True, help="Skip speaker diarization")
-def process(audio_file, name, no_diarize):
+def process(audio_file: str, name: str | None, no_diarize: bool) -> None:
     """Process an existing audio file (mp3, m4a, ogg, wav)."""
     settings = get_settings()
 
@@ -190,7 +195,7 @@ def process(audio_file, name, no_diarize):
     click.echo(f"Saved: {md_path}", err=True)
 
 
-def _free_gpu_memory():
+def _free_gpu_memory() -> None:
     """Free GPU memory so diarizer can use CUDA."""
     try:
         import gc
@@ -205,7 +210,14 @@ def _free_gpu_memory():
         pass
 
 
-def _maybe_diarize(segments, settings, mono_16k_path, stereo_path, *, diarize):
+def _maybe_diarize(
+    segments: list[Segment],
+    settings: Settings,
+    mono_16k_path: Path,
+    stereo_path: Path | None,
+    *,
+    diarize: bool,
+) -> list[Segment]:
     """Run diarization if enabled, configured, and token available."""
     if not diarize or not settings.diarize:
         return segments
@@ -231,7 +243,7 @@ def _maybe_diarize(segments, settings, mono_16k_path, stereo_path, *, diarize):
     return assign_speakers(segments, diarization_segments, user_speaker, stereo_path)
 
 
-def _get_stereo_source(audio_path):
+def _get_stereo_source(audio_path: Path) -> Path | None:
     """Return audio_path if it's a stereo WAV, else None."""
     try:
         from meetrec.audio import get_channel_count
@@ -244,7 +256,7 @@ def _get_stereo_source(audio_path):
 
 
 @cli.command()
-def status():
+def status() -> None:
     """Show current recording status and settings."""
     settings = get_settings()
 
