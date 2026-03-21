@@ -30,7 +30,7 @@ No web servers, databases, Docker, GUI.
 
 - Lint: `uv run ruff check --fix`
 - Format: `uv run ruff format`
-- Test: `uv run pytest`
+- Test: `uv run pytest` (coverage enabled by default via pyproject.toml)
 
 ## Code style
 

@@ -156,24 +156,29 @@ uv run ruff format --check
 uv run pytest
 ```
 
+Coverage report is enabled by default (`--cov=meetrec --cov-report=term-missing` in pyproject.toml).
+
 ### Test Structure
 
 ```
 tests/
 ├── fixtures.py          # Shared fixtures and WAV helpers
-├── regressions/         # Bug-fix regression tests
-│   ├── test_diarizer_regressions.py
-│   ├── test_recorder_regressions.py
-│   └── test_transcriber_regressions.py
-├── test_audio.py
-├── test_diarizer.py
-├── test_formatter.py
-├── test_recorder.py
-├── test_settings.py
-└── test_transcriber.py
+├── conftest.py          # Plugin registration for fixtures
+├── test_cli.py          # CLI integration tests (CliRunner + mocked ML models)
+├── test_integration.py  # Multi-module pipeline integration tests
+├── test_audio.py        # ffmpeg audio processing
+├── test_diarizer.py     # Speaker diarization and channel analysis
+├── test_formatter.py    # Markdown formatting and vault I/O
+├── test_recorder.py     # PulseAudio recording control
+├── test_settings.py     # Configuration / env vars
+├── test_transcriber.py  # Whisper transcription
+└── regressions/         # Bug-fix regression tests
+    ├── test_diarizer_regressions.py
+    ├── test_recorder_regressions.py
+    └── test_transcriber_regressions.py
 ```
 
-Tests with real ffmpeg are skipped on CI (marked with `skipif`). All other tests use mocks at system boundaries.
+Tests follow the Testing Trophy approach — integration tests cover CLI commands and multi-module pipelines, unit tests cover individual functions. ML models (Whisper, pyannote) are always mocked; ffmpeg and file I/O run for real. Tests requiring ffmpeg are skipped when it's not installed (`@pytest.mark.skipif`).
 
 ## License
 
