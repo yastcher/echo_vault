@@ -1,7 +1,9 @@
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from meetrec.transcriber import Segment, Word
+import pytest
+
+from meetrec.transcriber import Segment, Transcriber, Word
 
 
 def test_segment_dataclass():
@@ -99,3 +101,97 @@ def test_transcribe_returns_segments(settings):
     assert len(segments[0].words) == 1
     assert info["language"] == "en"
     assert info["duration"] == 5.0
+
+
+# --- split_on_pauses ---
+
+
+def test_split_on_pauses_splits_at_gap():
+    """Long segment with a pause between words should be split into two."""
+    seg = Segment(
+        start=0.0,
+        end=10.0,
+        text="I talk alone we talk together",
+        words=[
+            Word(start=0.0, end=1.0, word="I", probability=0.9),
+            Word(start=1.0, end=2.0, word="talk", probability=0.9),
+            Word(start=2.0, end=3.0, word="alone", probability=0.9),
+            # 2-second pause here (3.0 → 5.0)
+            Word(start=5.0, end=6.0, word="we", probability=0.9),
+            Word(start=6.0, end=7.0, word="talk", probability=0.9),
+            Word(start=7.0, end=8.0, word="together", probability=0.9),
+        ],
+        speaker="You",
+    )
+
+    result = Transcriber.split_on_pauses([seg], pause_threshold=1.0)
+
+    assert len(result) == 2
+    assert result[0].text == "I talk alone"
+    assert result[0].start == 0.0
+    assert result[0].end == 3.0
+    assert result[0].speaker == "You"
+    assert result[1].text == "we talk together"
+    assert result[1].start == 5.0
+    assert result[1].end == 8.0
+    assert result[1].speaker == "You"
+
+
+def test_split_on_pauses_no_split_when_continuous():
+    """Segment without pauses should pass through unchanged."""
+    seg = Segment(
+        start=0.0,
+        end=3.0,
+        text="hello world today",
+        words=[
+            Word(start=0.0, end=1.0, word="hello", probability=0.9),
+            Word(start=1.0, end=2.0, word="world", probability=0.9),
+            Word(start=2.0, end=3.0, word="today", probability=0.9),
+        ],
+    )
+
+    result = Transcriber.split_on_pauses([seg], pause_threshold=1.0)
+
+    assert len(result) == 1
+    assert result[0].text == "hello world today"
+
+
+def test_split_on_pauses_no_words():
+    """Segment without words should pass through unchanged."""
+    seg = Segment(start=0.0, end=5.0, text="no words here")
+
+    result = Transcriber.split_on_pauses([seg], pause_threshold=1.0)
+
+    assert len(result) == 1
+    assert result[0] is seg
+
+
+@pytest.mark.parametrize(
+    "threshold,expected_count",
+    [
+        # Gaps: a→b=0.8s, b→c=2.0s, c→d=4.0s
+        pytest.param(0.5, 4, id="tight_threshold"),  # all 3 gaps >= 0.5 → 4 chunks
+        pytest.param(1.5, 3, id="medium_threshold"),  # 2 gaps >= 1.5 (2.0, 4.0) → 3 chunks
+        pytest.param(5.0, 1, id="loose_threshold"),  # no gaps >= 5.0 → 1 chunk
+    ],
+)
+def test_split_on_pauses_threshold_sensitivity(threshold, expected_count):
+    """Different thresholds should produce different split counts."""
+    seg = Segment(
+        start=0.0,
+        end=20.0,
+        text="a b c d",
+        words=[
+            Word(start=0.0, end=1.0, word="a", probability=0.9),
+            # 0.8s gap
+            Word(start=1.8, end=2.5, word="b", probability=0.9),
+            # 2.0s gap
+            Word(start=4.5, end=5.5, word="c", probability=0.9),
+            # 4.0s gap
+            Word(start=9.5, end=10.0, word="d", probability=0.9),
+        ],
+    )
+
+    result = Transcriber.split_on_pauses([seg], pause_threshold=threshold)
+
+    assert len(result) == expected_count

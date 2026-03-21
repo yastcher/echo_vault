@@ -10,6 +10,7 @@ from meetrec.diarizer import (
     identify_user_speaker,
     load_stereo_channels,
     merge_channel_segments,
+    split_on_silence,
 )
 from meetrec.transcriber import Segment, Word
 from tests.fixtures import create_stereo_wav, create_stereo_wav_segments
@@ -390,3 +391,79 @@ def test_merge_channel_segments(mic_segs, mon_segs, expected_count, expected_sta
 
     assert len(result) == expected_count
     assert [s.start for s in result] == expected_starts
+
+
+# --- split_on_silence ---
+
+
+def test_split_on_silence_at_real_pause(stereo_wav):
+    """Segment spanning speech-silence-speech should be split at the silence gap."""
+    # 0-1s: loud (speech), 1-2.5s: silent (pause), 2.5-4s: loud (speech)
+    wav_path = stereo_wav(
+        [
+            (1.0, 0.8, 0.0),  # speech
+            (1.5, 0.0, 0.0),  # silence (1.5s > 1.0s threshold)
+            (1.5, 0.8, 0.0),  # speech
+        ]
+    )
+    mic_raw, _monitor_raw, sr = load_stereo_channels(wav_path)
+
+    seg = Segment(
+        start=0.0,
+        end=4.0,
+        text="hello world",
+        words=[
+            Word(start=0.0, end=0.8, word="hello", probability=0.9),
+            Word(start=2.7, end=3.5, word="world", probability=0.9),
+        ],
+        speaker="You",
+    )
+
+    result = split_on_silence([seg], mic_raw, sr, pause_threshold=1.0)
+
+    assert len(result) == 2
+    assert result[0].text == "hello"
+    assert result[0].speaker == "You"
+    assert result[1].text == "world"
+    assert result[1].speaker == "You"
+
+
+def test_split_on_silence_no_pause(stereo_wav):
+    """Continuous speech should not be split."""
+    wav_path = stereo_wav([(3.0, 0.8, 0.0)])  # 3s of speech, no silence
+    mic_raw, _monitor_raw, sr = load_stereo_channels(wav_path)
+
+    seg = Segment(
+        start=0.0,
+        end=3.0,
+        text="continuous speech here",
+        words=[
+            Word(start=0.0, end=1.0, word="continuous", probability=0.9),
+            Word(start=1.0, end=2.0, word="speech", probability=0.9),
+            Word(start=2.0, end=3.0, word="here", probability=0.9),
+        ],
+    )
+
+    result = split_on_silence([seg], mic_raw, sr, pause_threshold=1.0)
+
+    assert len(result) == 1
+    assert result[0].text == "continuous speech here"
+
+
+def test_split_on_silence_short_pause_ignored(stereo_wav):
+    """Silence shorter than pause_threshold should not cause a split."""
+    # 0-1s: speech, 1-1.5s: silence (0.5s < 1.0s threshold), 1.5-3s: speech
+    wav_path = stereo_wav(
+        [
+            (1.0, 0.8, 0.0),
+            (0.5, 0.0, 0.0),  # short silence
+            (1.5, 0.8, 0.0),
+        ]
+    )
+    mic_raw, _monitor_raw, sr = load_stereo_channels(wav_path)
+
+    seg = Segment(start=0.0, end=3.0, text="no split", speaker="You")
+
+    result = split_on_silence([seg], mic_raw, sr, pause_threshold=1.0)
+
+    assert len(result) == 1

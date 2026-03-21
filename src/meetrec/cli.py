@@ -76,6 +76,7 @@ def _stop_and_process(recorder: Recorder, settings: Settings, *, diarize: bool =
         filter_silent_segments,
         load_stereo_channels,
         merge_channel_segments,
+        split_on_silence,
     )
     from meetrec.formatter import format_markdown, save_audio_to_vault, save_markdown_to_vault
     from meetrec.transcriber import Transcriber
@@ -101,6 +102,10 @@ def _stop_and_process(recorder: Recorder, settings: Settings, *, diarize: bool =
     click.echo("Transcribing (this may take a few minutes)...", err=True)
     transcriber = Transcriber(settings)
     mic_segments, monitor_segments, info = transcriber.transcribe_stereo(mic_16k, monitor_16k)
+
+    # Split mic segments at actual silence gaps in raw audio
+    # (only mic — monitor segmentation is handled by Whisper + pyannote)
+    mic_segments = split_on_silence(mic_segments, mic_raw, raw_sr, settings.pause_threshold)
 
     # Filter out Whisper hallucinations on silent portions (using raw RMS)
     mic_segments = filter_silent_segments(mic_segments, mic_raw, raw_sr)

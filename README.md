@@ -70,6 +70,7 @@ All settings via environment variables or `.env` file:
 | `MEETREC_DIARIZE` | `true` | Enable speaker diarization |
 | `MEETREC_MAX_SPEAKERS` | *(auto)* | Max speakers hint for pyannote |
 | `MEETREC_CLUSTERING_THRESHOLD` | *(pyannote default)* | Speaker clustering threshold (higher = fewer speakers, try 0.85 if over-segmented) |
+| `MEETREC_PAUSE_THRESHOLD` | `1.0` | Seconds — split segments when word gap exceeds this (lower = more granular segments) |
 | `MEETREC_MEETINGS_DIR` | `meetings` | Subdirectory in vault for transcripts |
 | `MEETREC_ATTACHMENTS_DIR` | `attachments/audio` | Subdirectory in vault for audio files |
 | `MEETREC_BEAM_SIZE` | `5` | Whisper beam size |
@@ -102,11 +103,12 @@ Without the token, transcription works normally — just without speaker labels.
 3. **Audio saved** — stereo WAV copied to vault immediately
 4. **Channel splitting** — stereo split into two mono 16kHz WAVs, each independently normalized (loudnorm)
 5. **Dual transcription** — faster-whisper transcribes each channel separately: mic segments are labeled "You", monitor segments are labeled by pyannote
-6. **Hallucination filter** — segments where the raw channel RMS is below noise floor are dropped (catches Whisper hallucinations on silent portions)
-7. **GPU memory freed** — Whisper model unloaded before diarization
-8. **Diarization** — pyannote runs on monitor channel only to distinguish remote speakers ("Speaker 1", "Speaker 2", ...)
-9. **Merge** — segments from both channels combined and sorted by timestamp; overlapping segments (simultaneous speech) are preserved
-10. **Output** — markdown with timecodes and speaker labels saved to vault
+6. **Pause splitting** — long segments are split where word gaps exceed the pause threshold, so mic and monitor segments interleave chronologically
+7. **Hallucination filter** — segments where the raw channel RMS is below noise floor are dropped (catches Whisper hallucinations on silent portions)
+8. **GPU memory freed** — Whisper model unloaded before diarization
+9. **Diarization** — pyannote runs on monitor channel only to distinguish remote speakers ("Speaker 1", "Speaker 2", ...)
+10. **Merge** — segments from both channels combined and sorted by timestamp; overlapping segments (simultaneous speech) are preserved
+11. **Output** — markdown with timecodes and speaker labels saved to vault
 
 This dual-channel approach avoids mono mixing, which degrades both voices during simultaneous speech and can lose quiet-channel audio entirely.
 

@@ -149,6 +149,43 @@ class Transcriber:
         return mic_segments, monitor_segments, info
 
     @staticmethod
+    def split_on_pauses(segments: list[Segment], pause_threshold: float = 1.0) -> list[Segment]:
+        """Split segments where consecutive words have a gap >= pause_threshold.
+
+        Whisper often merges speech across pauses into one segment.
+        This splits them so segments from different channels can interleave
+        chronologically after merging.
+        """
+        result: list[Segment] = []
+        for seg in segments:
+            if not seg.words or len(seg.words) <= 1:
+                result.append(seg)
+                continue
+
+            chunks: list[list[Word]] = []
+            current_chunk: list[Word] = [seg.words[0]]
+
+            for prev, word in zip(seg.words, seg.words[1:], strict=False):
+                if word.start - prev.end >= pause_threshold:
+                    chunks.append(current_chunk)
+                    current_chunk = [word]
+                else:
+                    current_chunk.append(word)
+            chunks.append(current_chunk)
+
+            for chunk in chunks:
+                result.append(
+                    Segment(
+                        start=chunk[0].start,
+                        end=chunk[-1].end,
+                        text=" ".join(w.word.strip() for w in chunk),
+                        words=chunk,
+                        speaker=seg.speaker,
+                    )
+                )
+        return result
+
+    @staticmethod
     def _collect_segments(segments_iter: Iterable[Any]) -> list[Segment]:
         """Iterate over faster-whisper segments and convert to dataclasses."""
         segments: list[Segment] = []

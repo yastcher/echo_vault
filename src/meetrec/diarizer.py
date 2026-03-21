@@ -173,6 +173,100 @@ def filter_silent_segments(
     return result
 
 
+def split_on_silence(
+    segments: list[Segment],
+    raw_samples: np.ndarray,
+    sample_rate: int,
+    pause_threshold: float = 1.0,
+    rms_threshold: float = 200.0,
+) -> list[Segment]:
+    """Split segments at silence gaps detected in raw audio.
+
+    Scans raw audio in 100ms windows within each segment. When a contiguous
+    silence region (RMS < rms_threshold) lasts >= pause_threshold seconds,
+    the segment is split at the midpoint of that silence.
+
+    More reliable than word-timestamp-based splitting because it uses the
+    actual audio signal rather than Whisper's (sometimes inaccurate) timing.
+    """
+    window_dur = 0.1  # 100ms windows
+    window_samples = int(window_dur * sample_rate)
+    result: list[Segment] = []
+
+    for seg in segments:
+        sf = max(0, min(int(seg.start * sample_rate), len(raw_samples)))
+        ef = max(0, min(int(seg.end * sample_rate), len(raw_samples)))
+
+        if ef - sf < window_samples:
+            result.append(seg)
+            continue
+
+        # Compute RMS per window
+        silence_start: float | None = None
+        split_points: list[float] = []
+
+        for i in range(sf, ef, window_samples):
+            chunk = raw_samples[i : min(i + window_samples, ef)]
+            rms = float(np.sqrt(np.mean(chunk.astype(np.float64) ** 2)))
+            t = i / sample_rate
+
+            if rms < rms_threshold:
+                if silence_start is None:
+                    silence_start = t
+            else:
+                if silence_start is not None:
+                    silence_dur = t - silence_start
+                    if silence_dur >= pause_threshold:
+                        split_points.append(silence_start + silence_dur / 2)
+                    silence_start = None
+
+        # Check trailing silence
+        if silence_start is not None:
+            silence_dur = seg.end - silence_start
+            if silence_dur >= pause_threshold:
+                split_points.append(silence_start + silence_dur / 2)
+
+        if not split_points:
+            result.append(seg)
+            continue
+
+        # Build sub-segments
+        boundaries = [seg.start, *split_points, seg.end]
+        for i in range(len(boundaries) - 1):
+            sub_start = boundaries[i]
+            sub_end = boundaries[i + 1]
+
+            if seg.words:
+                sub_words = [
+                    w for w in seg.words if w.start >= sub_start - 0.05 and w.end <= sub_end + 0.05
+                ]
+                if not sub_words:
+                    continue
+                result.append(
+                    Segment(
+                        start=sub_words[0].start,
+                        end=sub_words[-1].end,
+                        text=" ".join(w.word.strip() for w in sub_words),
+                        words=sub_words,
+                        speaker=seg.speaker,
+                    )
+                )
+            else:
+                # No words — keep the sub-segment with original text proportioned
+                if sub_end - sub_start >= 0.5:
+                    result.append(
+                        Segment(
+                            start=sub_start,
+                            end=sub_end,
+                            text=seg.text,
+                            words=None,
+                            speaker=seg.speaker,
+                        )
+                    )
+
+    return result
+
+
 def merge_channel_segments(
     mic_segments: list[Segment],
     monitor_segments: list[Segment],

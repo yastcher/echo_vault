@@ -38,6 +38,9 @@ class Settings(BaseSettings):
     max_speakers: int | None = None
     clustering_threshold: float | None = None
 
+    # Post-processing
+    pause_threshold: float = 1.0  # seconds — split segments on word gaps >= this
+
 
 def get_settings() -> Settings:
     """Load settings. Raises clear error if MEETREC_VAULT_PATH is not set."""
