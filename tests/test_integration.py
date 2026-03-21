@@ -121,7 +121,7 @@ def test_stereo_pipeline_to_markdown(tmp_path):
         segments_spec=[
             (1.0, 0.8, 0.003),  # mic speech, monitor silent
             (1.0, 0.003, 0.8),  # mic silent, monitor speech
-            (1.0, 0.6, 0.6),    # both speaking
+            (1.0, 0.6, 0.6),  # both speaking
         ],
     )
 

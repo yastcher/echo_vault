@@ -52,6 +52,20 @@ def create_silent_wav(path: Path, duration: float = 1.0, sample_rate: int = 4800
         wf.writeframes(b"\x00\x00" * n_frames)
 
 
+def create_mono_wav(
+    path: Path, duration: float = 1.0, sample_rate: int = 48000, amplitude: float = 0.5
+) -> None:
+    """Create a mono WAV with a 440Hz sine wave at given amplitude."""
+    n_frames = int(duration * sample_rate)
+    t = np.linspace(0, duration, n_frames, dtype=np.float32)
+    samples = (amplitude * np.sin(2 * np.pi * 440 * t) * 32767).astype(np.int16)
+    with wave.open(str(path), "wb") as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(sample_rate)
+        wf.writeframes(samples.tobytes())
+
+
 def create_stereo_wav(path, duration, sample_rate, left_amplitude, right_amplitude):
     """Create a stereo WAV with sine wave on each channel at given amplitudes."""
     n_frames = int(duration * sample_rate)
