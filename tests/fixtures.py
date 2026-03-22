@@ -1,9 +1,11 @@
 import json
 import wave
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
+from click.testing import CliRunner
 
 from meetrec.recorder import Recorder
 from meetrec.settings import Settings
@@ -37,6 +39,24 @@ def recorder(tmp_path):
 def session_file(recorder):
     """Path to session file."""
     return recorder.session_file
+
+
+@pytest.fixture
+def runner():
+    """Click CLI test runner."""
+    return CliRunner()
+
+
+@pytest.fixture
+def stereo_wav(tmp_path):
+    """Factory fixture: returns callable(segments_spec) -> Path to stereo WAV."""
+
+    def _create(segments_spec, sample_rate=16000):
+        path = tmp_path / "stereo.wav"
+        create_stereo_wav_segments(path, sample_rate, segments_spec)
+        return path
+
+    return _create
 
 
 # --- WAV file helpers ---
@@ -113,6 +133,9 @@ def create_stereo_wav_segments(path, sample_rate, segments_spec):
         wf.writeframes(stereo.tobytes())
 
 
+# --- Session file helpers ---
+
+
 def create_session_file(session_file, **overrides):
     """Write a session.json file with sensible defaults, overridden by kwargs."""
     data = {
@@ -128,13 +151,44 @@ def create_session_file(session_file, **overrides):
     return data
 
 
-@pytest.fixture
-def stereo_wav(tmp_path):
-    """Factory fixture: returns callable(segments_spec) -> Path to stereo WAV."""
+# --- Mock helpers ---
 
-    def _create(segments_spec, sample_rate=16000):
-        path = tmp_path / "stereo.wav"
-        create_stereo_wav_segments(path, sample_rate, segments_spec)
-        return path
 
-    return _create
+def mock_whisper_transcribe(segments_data):
+    """Create a mock WhisperModel that returns given segments.
+
+    segments_data: list of (start, end, text) tuples
+    """
+    mock_model = MagicMock()
+
+    mock_info = MagicMock()
+    mock_info.language = "en"
+    mock_info.language_probability = 0.99
+    mock_info.duration = 10.0
+
+    mock_segments = []
+    for start, end, text in segments_data:
+        seg = MagicMock()
+        seg.start = start
+        seg.end = end
+        seg.text = f" {text} "
+        seg.words = []
+        mock_segments.append(seg)
+
+    # Each call to transcribe() returns a fresh iterator
+    mock_model.transcribe.side_effect = lambda *a, **kw: (iter(list(mock_segments)), mock_info)
+
+    return mock_model
+
+
+def mock_pyannote_annotation(tracks):
+    """Create a mock pyannote annotation from (start, end, speaker) tuples."""
+    mock_annotation = MagicMock()
+    itertracks_result = []
+    for start, end, speaker in tracks:
+        turn = MagicMock()
+        turn.start = start
+        turn.end = end
+        itertracks_result.append((turn, None, speaker))
+    mock_annotation.itertracks.return_value = itertracks_result
+    return mock_annotation

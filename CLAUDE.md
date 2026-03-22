@@ -37,6 +37,9 @@ No web servers, databases, Docker, GUI.
 Enforced by ruff. See pyproject.toml `[tool.ruff]` for full config.
 Do not duplicate ruff rules here — if ruff can check it, ruff owns it.
 
+- No local imports inside functions. All imports at the top of the file.
+  Local imports are only acceptable when explicitly required by documentation (e.g. circular dependency workarounds).
+
 ## Testing
 
 - pytest with mocks only at system boundaries (subprocess, file I/O)

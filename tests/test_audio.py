@@ -4,13 +4,13 @@ from unittest.mock import patch
 
 import pytest
 
-from tests.fixtures import create_silent_wav
+from meetrec.audio import convert_to_mono16k, merge_channels, split_channels_16k
+from tests.fixtures import create_silent_wav, create_stereo_wav
 
 
 @pytest.mark.skipif(not shutil.which("ffmpeg"), reason="ffmpeg required")
 def test_merge_channels(tmp_path):
     """Merge two mono WAVs into stereo + 16kHz mono."""
-    from meetrec.audio import merge_channels
 
     monitor = tmp_path / "monitor.wav"
     mic = tmp_path / "mic.wav"
@@ -37,7 +37,6 @@ def test_merge_channels(tmp_path):
 @pytest.mark.skipif(not shutil.which("ffmpeg"), reason="ffmpeg required")
 def test_convert_to_mono16k(tmp_path):
     """Convert a WAV file to 16kHz mono."""
-    from meetrec.audio import convert_to_mono16k
 
     input_file = tmp_path / "input.wav"
     output_dir = tmp_path / "output"
@@ -55,8 +54,6 @@ def test_convert_to_mono16k(tmp_path):
 @pytest.mark.skipif(not shutil.which("ffmpeg"), reason="ffmpeg required")
 def test_split_channels_16k(tmp_path):
     """Split stereo into two mono 16kHz WAVs."""
-    from meetrec.audio import split_channels_16k
-    from tests.fixtures import create_stereo_wav
 
     stereo = tmp_path / "stereo.wav"
     output_dir = tmp_path / "output"
@@ -82,7 +79,6 @@ def test_split_channels_16k(tmp_path):
 
 def test_empty_file_raises(tmp_path):
     """Empty WAV file should raise RuntimeError."""
-    from meetrec.audio import merge_channels
 
     monitor = tmp_path / "monitor.wav"
     mic = tmp_path / "mic.wav"
@@ -98,7 +94,6 @@ def test_empty_file_raises(tmp_path):
 
 def test_ffmpeg_not_found(tmp_path):
     """Should give clear error when ffmpeg is not installed."""
-    from meetrec.audio import merge_channels
 
     monitor = tmp_path / "monitor.wav"
     mic = tmp_path / "mic.wav"

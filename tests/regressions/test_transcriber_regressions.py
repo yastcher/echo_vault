@@ -3,6 +3,8 @@
 from pathlib import Path
 from unittest.mock import MagicMock, call, patch
 
+from meetrec.transcriber import Transcriber
+
 
 def test_cuda_fallback_to_cpu(settings):
     """Should fall back to CPU when CUDA is not available at model load time.
@@ -18,8 +20,6 @@ def test_cuda_fallback_to_cpu(settings):
         return MagicMock()
 
     with patch("meetrec.transcriber.WhisperModel", side_effect=mock_init):
-        from meetrec.transcriber import Transcriber
-
         Transcriber(settings)
 
     assert call_args == ["cuda", "cpu"]
@@ -55,8 +55,6 @@ def test_cuda_inference_fallback_to_cpu(settings, capsys):
         cuda_model.transcribe.return_value = (failing_iter(), mock_info)
         cpu_model.transcribe.return_value = (iter([mock_segment]), mock_info)
 
-        from meetrec.transcriber import Transcriber
-
         transcriber = Transcriber(settings)
         segments, info = transcriber.transcribe(Path("/fake/audio.wav"))
 
@@ -89,8 +87,6 @@ def test_empty_transcription(settings, capsys):
     with patch("meetrec.transcriber.WhisperModel") as mock_model_cls:
         instance = mock_model_cls.return_value
         instance.transcribe.return_value = (iter([]), mock_info)
-
-        from meetrec.transcriber import Transcriber
 
         transcriber = Transcriber(settings)
         segments, _info = transcriber.transcribe(Path("/fake/audio.wav"))

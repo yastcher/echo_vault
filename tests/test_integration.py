@@ -1,9 +1,12 @@
 """Integration tests — verify multi-module pipelines end-to-end."""
 
 import shutil
+import wave
 
 import pytest
 
+from meetrec.audio import get_channel_count, merge_channels, split_channels_16k
+from meetrec.cli import _get_stereo_source
 from meetrec.diarizer import (
     DiarizationSegment,
     assign_speakers,
@@ -15,13 +18,12 @@ from meetrec.diarizer import (
 )
 from meetrec.formatter import format_markdown
 from meetrec.transcriber import Segment
-from tests.fixtures import create_stereo_wav_segments
+from tests.fixtures import create_mono_wav, create_stereo_wav, create_stereo_wav_segments
 
 
 @pytest.mark.skipif(not shutil.which("ffmpeg"), reason="ffmpeg required")
 def test_split_and_classify_channel(tmp_path):
     """split_channels_16k → load_stereo_channels → classify_segment_by_channel."""
-    from meetrec.audio import split_channels_16k
 
     stereo = tmp_path / "stereo.wav"
     # 0-1s: mic dominant, 1-2s: monitor dominant
@@ -111,7 +113,6 @@ def test_assign_speakers_then_format():
 @pytest.mark.skipif(not shutil.which("ffmpeg"), reason="ffmpeg required")
 def test_stereo_pipeline_to_markdown(tmp_path):
     """Full pipeline: stereo WAV → split → filter → merge → format_markdown."""
-    from meetrec.audio import split_channels_16k
 
     stereo = tmp_path / "stereo.wav"
     # 0-1s: mic only, 1-2s: monitor only, 2-3s: both
@@ -193,3 +194,62 @@ def test_identify_and_assign_with_real_stereo(stereo_wav):
 
     assert labeled[0].speaker == "You"
     assert labeled[1].speaker == "Speaker 1"
+
+
+# --- merge_channels pipeline ---
+
+
+@pytest.mark.skipif(not shutil.which("ffmpeg"), reason="ffmpeg required")
+def test_merge_channels_produces_stereo_and_mono(tmp_path):
+    """merge_channels: two mono WAVs → stereo (2ch) + mono 16kHz for Whisper."""
+    monitor = tmp_path / "monitor.wav"
+    mic = tmp_path / "mic.wav"
+    create_mono_wav(monitor, duration=2.0, sample_rate=48000, amplitude=0.5)
+    create_mono_wav(mic, duration=2.0, sample_rate=48000, amplitude=0.5)
+
+    stereo_path, mono_16k_path = merge_channels(monitor, mic, tmp_path / "output")
+
+    # Stereo: 2 channels
+    with wave.open(str(stereo_path), "rb") as wf:
+        assert wf.getnchannels() == 2
+
+    # Mono 16kHz: 1 channel, correct sample rate
+    with wave.open(str(mono_16k_path), "rb") as wf:
+        assert wf.getnchannels() == 1
+        assert wf.getframerate() == 16000
+
+    # Stereo can be loaded for channel analysis
+    mic_raw, monitor_raw, _sr = load_stereo_channels(stereo_path)
+    assert len(mic_raw) > 0
+    assert len(monitor_raw) > 0
+
+
+# --- get_channel_count + _get_stereo_source ---
+
+
+def test_get_channel_count_mono_and_stereo(tmp_path):
+    """get_channel_count: mono → 1, stereo → 2."""
+    mono = tmp_path / "mono.wav"
+    stereo = tmp_path / "stereo.wav"
+    create_mono_wav(mono, duration=1.0)
+    create_stereo_wav(
+        stereo, duration=1.0, sample_rate=16000, left_amplitude=0.5, right_amplitude=0.5
+    )
+
+    assert get_channel_count(mono) == 1
+    assert get_channel_count(stereo) == 2
+
+
+def test_get_stereo_source_detection(tmp_path):
+    """_get_stereo_source: returns path for stereo WAV, None for mono."""
+    mono = tmp_path / "mono.wav"
+    stereo = tmp_path / "stereo.wav"
+    create_mono_wav(mono, duration=1.0)
+    create_stereo_wav(
+        stereo, duration=1.0, sample_rate=16000, left_amplitude=0.5, right_amplitude=0.5
+    )
+
+    assert _get_stereo_source(stereo) == stereo
+    assert _get_stereo_source(mono) is None
+    # Non-existent file returns None (no crash)
+    assert _get_stereo_source(tmp_path / "nonexistent.wav") is None

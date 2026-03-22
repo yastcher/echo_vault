@@ -5,7 +5,14 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from meetrec.diarizer import DiarizationSegment, assign_speakers
+from meetrec.diarizer import (
+    DiarizationSegment,
+    Diarizer,
+    assign_speakers,
+    filter_silent_segments,
+    load_stereo_channels,
+    split_on_silence,
+)
 from meetrec.settings import Settings
 from meetrec.transcriber import Segment, Word
 from tests.fixtures import create_stereo_wav_segments
@@ -17,7 +24,6 @@ def test_diarizer_passes_token_correctly(tmp_vault):
     Bug: pyannote 4.x changed API from use_auth_token to token.
     Old code passed use_auth_token which caused TypeError.
     """
-    from meetrec.diarizer import Diarizer
 
     settings = Settings(vault_path=tmp_vault, hf_token="hf_test_123", device="cpu")
 
@@ -36,7 +42,6 @@ def test_diarize_handles_diarize_output(tmp_vault):
     Bug: pyannote 4.x returns DiarizeOutput instead of Annotation.
     Code called .itertracks() directly which raised AttributeError.
     """
-    from meetrec.diarizer import Diarizer
 
     settings = Settings(vault_path=tmp_vault, hf_token="hf_fake_token", device="cpu")
 
@@ -68,7 +73,6 @@ def test_diarize_cuda_init_fallback(tmp_vault, capsys):
 
     Bug: Diarizer crashed if torch.device('cuda') failed.
     """
-    from meetrec.diarizer import Diarizer
 
     settings = Settings(vault_path=tmp_vault, hf_token="hf_fake_token", device="cuda")
 
@@ -89,7 +93,6 @@ def test_diarize_cuda_oom_fallback(tmp_vault, capsys):
     Bug: GPU with 3.6 GiB couldn't hold both Whisper and pyannote models.
     Pipeline loaded on CUDA but crashed with OutOfMemoryError during inference.
     """
-    from meetrec.diarizer import Diarizer
 
     settings = Settings(vault_path=tmp_vault, hf_token="hf_fake_token", device="cuda")
 
@@ -176,7 +179,6 @@ def test_dual_channel_speaker_attribution():
       17-18s: L(mic)=460-665  R(mon)=0         -> mic=speech, monitor=silence
       19-29s: L(mic)=260-770  R(mon)=1120-2580 -> both channels=speech
     """
-    from meetrec.diarizer import filter_silent_segments, load_stereo_channels
 
     mic_raw, monitor_raw, raw_sr = load_stereo_channels(TEST_WAV)
 
@@ -218,7 +220,6 @@ def test_split_on_silence_detects_real_pause():
     Test WAV: user speaks 0-9s, pauses 10-16s (monitor active), resumes 17s+.
     A segment spanning 0-20s should be split around the pause.
     """
-    from meetrec.diarizer import load_stereo_channels, split_on_silence
 
     mic_raw, monitor_raw, sr = load_stereo_channels(TEST_WAV)
 
