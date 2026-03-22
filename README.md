@@ -6,7 +6,7 @@ Records monitor source (other participants) + microphone (your voice) on Linux v
 
 ## Features
 
-- Records system audio (monitor) + microphone simultaneously
+- Records system audio (monitor) + microphone simultaneously — survives audio device hot-switching
 - Transcribes locally with faster-whisper (CUDA with CPU fallback)
 - Speaker diarization via pyannote — identifies "You" vs other speakers
 - Audio channel normalization — mic and monitor balanced before transcription
@@ -17,7 +17,7 @@ Records monitor source (other participants) + microphone (your voice) on Linux v
 ## Requirements
 
 - Linux with PulseAudio or PipeWire
-- Python 3.11+
+- Python 3.14+
 - ffmpeg (`sudo apt install ffmpeg`)
 - parecord (`sudo apt install pulseaudio-utils`)
 - NVIDIA GPU recommended (CPU fallback available)
@@ -63,18 +63,19 @@ All settings via environment variables or `.env` file:
 | `MEETREC_LANGUAGE` | `en` | Transcription language (`auto` for detection) |
 | `MEETREC_DEVICE` | `cuda` | Compute device (cuda/cpu) |
 | `MEETREC_COMPUTE_TYPE` | `float16` | Model precision |
-| `MEETREC_MONITOR_SOURCE` | `auto` | PulseAudio monitor source |
-| `MEETREC_MIC_SOURCE` | `auto` | PulseAudio microphone source |
+| `MEETREC_MONITOR_SOURCE` | `auto` | PulseAudio monitor source (`auto` uses `@DEFAULT_MONITOR@` — follows device switches) |
+| `MEETREC_MIC_SOURCE` | `auto` | PulseAudio microphone source (`auto` uses `@DEFAULT_SOURCE@`) |
 | `MEETREC_SAMPLE_RATE` | `48000` | Audio sample rate |
 | `MEETREC_HF_TOKEN` | *(empty)* | HuggingFace token for speaker diarization |
 | `MEETREC_DIARIZE` | `true` | Enable speaker diarization |
 | `MEETREC_MAX_SPEAKERS` | *(auto)* | Max speakers hint for pyannote |
 | `MEETREC_CLUSTERING_THRESHOLD` | *(pyannote default)* | Speaker clustering threshold (higher = fewer speakers, try 0.85 if over-segmented) |
-| `MEETREC_PAUSE_THRESHOLD` | `1.0` | Seconds — split segments when word gap exceeds this (lower = more granular segments) |
+| `MEETREC_PAUSE_THRESHOLD` | `1.0` | Seconds — split segments at silence gaps longer than this (lower = more granular segments) |
 | `MEETREC_MEETINGS_DIR` | `meetings` | Subdirectory in vault for transcripts |
 | `MEETREC_ATTACHMENTS_DIR` | `attachments/audio` | Subdirectory in vault for audio files |
 | `MEETREC_BEAM_SIZE` | `5` | Whisper beam size |
 | `MEETREC_VAD_FILTER` | `true` | Voice activity detection filter |
+| `MEETREC_CONDITION_ON_PREVIOUS_TEXT` | `false` | Whisper conditions on prior text (disable to preserve repeated speech) |
 
 ## Speaker Diarization
 
@@ -98,12 +99,12 @@ Without the token, transcription works normally — just without speaker labels.
 
 ### Live recording (dual-channel pipeline)
 
-1. **Recording** — parecord captures monitor + mic as separate WAV files
+1. **Recording** — parecord captures monitor + mic as separate WAV files (uses `@DEFAULT_MONITOR@`/`@DEFAULT_SOURCE@` to follow device switches)
 2. **Merging** — ffmpeg creates stereo WAV (left=mic, right=monitor)
 3. **Audio saved** — stereo WAV copied to vault immediately
 4. **Channel splitting** — stereo split into two mono 16kHz WAVs, each independently normalized (loudnorm)
 5. **Dual transcription** — faster-whisper transcribes each channel separately: mic segments are labeled "You", monitor segments are labeled by pyannote
-6. **Pause splitting** — long segments are split where word gaps exceed the pause threshold, so mic and monitor segments interleave chronologically
+6. **Pause splitting** — mic segments are split at silence gaps detected via raw audio RMS (adaptive threshold + monitor-relative check), so mic and monitor segments interleave chronologically
 7. **Hallucination filter** — segments where the raw channel RMS is below noise floor are dropped (catches Whisper hallucinations on silent portions)
 8. **GPU memory freed** — Whisper model unloaded before diarization
 9. **Diarization** — pyannote runs on monitor channel only to distinguish remote speakers ("Speaker 1", "Speaker 2", ...)

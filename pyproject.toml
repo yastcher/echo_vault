@@ -4,7 +4,7 @@ version = "0.2.0"
 description = "Local meeting audio recorder with transcription for Obsidian"
 readme = "README.md"
 authors = [{ name = "Yast", email = "yastcher@gmail.com" }]
-requires-python = ">=3.11"
+requires-python = ">=3.14"
 dependencies = [
     "faster-whisper>=1.0.0",
     "pydantic-settings>=2.0.0",
@@ -32,7 +32,7 @@ dev = [
 ]
 
 [tool.ruff]
-target-version = "py311"
+target-version = "py314"
 line-length = 100
 exclude = [
     ".claude",
