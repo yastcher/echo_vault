@@ -105,7 +105,13 @@ def _stop_and_process(recorder: Recorder, settings: Settings, *, diarize: bool =
 
     # Split mic segments at actual silence gaps in raw audio
     # (only mic — monitor segmentation is handled by Whisper + pyannote)
-    mic_segments = split_on_silence(mic_segments, mic_raw, raw_sr, settings.pause_threshold)
+    mic_segments = split_on_silence(
+        mic_segments,
+        mic_raw,
+        raw_sr,
+        settings.pause_threshold,
+        monitor_samples=monitor_raw,
+    )
 
     # Filter out Whisper hallucinations on silent portions (using raw RMS)
     mic_segments = filter_silent_segments(mic_segments, mic_raw, raw_sr)

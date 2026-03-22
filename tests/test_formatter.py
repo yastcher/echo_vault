@@ -96,6 +96,29 @@ def test_consecutive_speakers_merged():
     assert result.count("[00:") == 3
 
 
+def test_consecutive_speakers_not_merged_across_pause():
+    """Consecutive segments from the same speaker separated by a pause should NOT merge."""
+    segments = [
+        Segment(start=0.0, end=5.0, text="First block.", speaker="You"),
+        # 3-second gap (5.0 → 8.0) — exceeds default pause_threshold=1.0
+        Segment(start=8.0, end=13.0, text="After pause.", speaker="You"),
+    ]
+
+    result = format_markdown(
+        segments=segments,
+        session_name="2026-03-17_14-30-00",
+        audio_rel_path="audio.wav",
+        duration_seconds=13.0,
+        language="en",
+    )
+
+    # Should be two separate lines, not merged
+    assert "**You:** First block." in result
+    assert "**You:** After pause." in result
+    assert "First block. After pause." not in result
+    assert result.count("[00:") == 2
+
+
 def test_save_to_vault_creates_files(settings, tmp_vault, tmp_path):
     """save_to_vault should create .md and .wav in correct subdirectories."""
     stereo_wav = tmp_path / "stereo.wav"

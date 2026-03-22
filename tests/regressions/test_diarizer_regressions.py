@@ -7,7 +7,7 @@ import pytest
 
 from meetrec.diarizer import DiarizationSegment, assign_speakers
 from meetrec.settings import Settings
-from meetrec.transcriber import Segment
+from meetrec.transcriber import Segment, Word
 from tests.fixtures import create_stereo_wav_segments
 
 
@@ -209,3 +209,50 @@ def test_dual_channel_speaker_attribution():
     # Monitor should drop: 0-9s (silence), 17-18s (silence)
     assert 0.0 not in monitor_starts, "Monitor silence at 0-9s should be filtered out"
     assert 17.0 not in monitor_starts, "Monitor silence at 17-18s should be filtered out"
+
+
+@pytest.mark.skipif(not TEST_WAV.exists(), reason="test WAV not available")
+def test_split_on_silence_detects_real_pause():
+    """split_on_silence should split mic segment at 9-10s pause.
+
+    Test WAV: user speaks 0-9s, pauses 10-16s (monitor active), resumes 17s+.
+    A segment spanning 0-20s should be split around the pause.
+    """
+    from meetrec.diarizer import load_stereo_channels, split_on_silence
+
+    mic_raw, monitor_raw, sr = load_stereo_channels(TEST_WAV)
+
+    # Simulate Whisper returning one big mic segment covering speech + pause + speech
+    seg = Segment(
+        start=0.0,
+        end=20.0,
+        text="speech before pause speech after pause",
+        words=[
+            Word(start=1.0, end=2.0, word="speech", probability=0.9),
+            Word(start=3.0, end=4.0, word="before", probability=0.9),
+            Word(start=5.0, end=6.0, word="pause", probability=0.9),
+            Word(start=17.0, end=18.0, word="speech", probability=0.9),
+            Word(start=18.0, end=19.0, word="after", probability=0.9),
+            Word(start=19.0, end=20.0, word="pause", probability=0.9),
+        ],
+        speaker="You",
+    )
+
+    result = split_on_silence(
+        [seg],
+        mic_raw,
+        sr,
+        pause_threshold=1.0,
+        monitor_samples=monitor_raw,
+    )
+
+    assert len(result) >= 2, (
+        f"Expected split at ~10s pause, got {len(result)} segment(s): "
+        f"{[(s.start, s.end, s.text) for s in result]}"
+    )
+    # First sub-segment should end before the pause
+    assert result[0].end <= 10.0, f"First segment should end before pause, got end={result[0].end}"
+    # Last sub-segment should start after the pause
+    assert result[-1].start >= 15.0, (
+        f"Last segment should start after pause, got start={result[-1].start}"
+    )

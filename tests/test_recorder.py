@@ -7,8 +7,20 @@ from meetrec.settings import Settings
 from tests.fixtures import create_session_file
 
 
-def test_detect_devices_auto(settings):
-    """Auto-detect should parse pactl JSON output."""
+def test_detect_devices_auto_dynamic(settings):
+    """Auto-detect should use @DEFAULT_MONITOR@/@DEFAULT_SOURCE@ when supported."""
+    with (
+        patch("meetrec.recorder.shutil.which", return_value="/usr/bin/pactl"),
+        patch("meetrec.recorder._probe_source", return_value=True),
+    ):
+        monitor, mic = detect_devices(settings)
+
+    assert monitor == "@DEFAULT_MONITOR@"
+    assert mic == "@DEFAULT_SOURCE@"
+
+
+def test_detect_devices_auto_fallback(settings):
+    """Auto-detect should fall back to pactl info when dynamic refs not supported."""
     pactl_output = json.dumps(
         {
             "default_sink_name": "alsa_output.pci-0000_00_1f.3.analog-stereo",
@@ -18,6 +30,7 @@ def test_detect_devices_auto(settings):
 
     with (
         patch("meetrec.recorder.shutil.which", return_value="/usr/bin/pactl"),
+        patch("meetrec.recorder._probe_source", return_value=False),
         patch("meetrec.recorder.subprocess.run") as mock_run,
     ):
         mock_run.return_value = MagicMock(stdout=pactl_output, returncode=0)

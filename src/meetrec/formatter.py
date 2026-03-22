@@ -38,8 +38,13 @@ def _format_duration_hms(seconds: float) -> str:
 
 def _merge_consecutive_speakers(
     segments: list[Segment],
+    pause_threshold: float = 1.0,
 ) -> list[tuple[float, str | None, str]]:
     """Merge consecutive segments from the same speaker into one block.
+
+    Segments from the same speaker are NOT merged when the gap between them
+    exceeds pause_threshold — this preserves intentional pauses within a
+    single speaker's speech.
 
     Returns list of (start_time, speaker, merged_text).
     """
@@ -48,15 +53,19 @@ def _merge_consecutive_speakers(
 
     merged: list[tuple[float, str | None, str]] = []
     current_start = segments[0].start
+    current_end = segments[0].end
     current_speaker = segments[0].speaker
     current_texts = [segments[0].text]
 
     for seg in segments[1:]:
-        if seg.speaker == current_speaker:
+        gap = seg.start - current_end
+        if seg.speaker == current_speaker and gap < pause_threshold:
             current_texts.append(seg.text)
+            current_end = seg.end
         else:
             merged.append((current_start, current_speaker, " ".join(current_texts)))
             current_start = seg.start
+            current_end = seg.end
             current_speaker = seg.speaker
             current_texts = [seg.text]
 

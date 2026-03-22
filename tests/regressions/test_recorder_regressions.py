@@ -24,6 +24,7 @@ def test_detect_devices_auto_legacy_keys(settings):
 
     with (
         patch("meetrec.recorder.shutil.which", return_value="/usr/bin/pactl"),
+        patch("meetrec.recorder._probe_source", return_value=False),
         patch("meetrec.recorder.subprocess.run") as mock_run,
     ):
         mock_run.return_value = MagicMock(stdout=pactl_output, returncode=0)

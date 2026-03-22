@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     compute_type: str = "float16"
     beam_size: int = 5
     vad_filter: bool = True
+    condition_on_previous_text: bool = False
 
     # Audio
     monitor_source: str = "auto"

@@ -28,9 +28,13 @@ def detect_devices(settings: Settings) -> tuple[str, str]:
     """Return (monitor_source, mic_source).
 
     If settings.monitor_source == "auto":
-        pactl --format=json info -> default_sink + ".monitor"
+        Use @DEFAULT_MONITOR@ (PulseAudio/PipeWire dynamic reference that
+        follows the current default sink — survives device switches).
+        Falls back to pactl info -> default_sink + ".monitor" when
+        @DEFAULT_MONITOR@ is not supported.
     If settings.mic_source == "auto":
-        pactl --format=json info -> default_source
+        Use @DEFAULT_SOURCE@ (follows the current default source).
+        Falls back to pactl info -> default_source.
 
     Raises RuntimeError if pactl is not available or devices not found.
     """
@@ -41,31 +45,82 @@ def detect_devices(settings: Settings) -> tuple[str, str]:
         if not shutil.which("pactl"):
             raise RuntimeError("pactl not found. Install: sudo apt install pulseaudio-utils")
 
-        result = subprocess.run(
-            ["pactl", "--format=json", "info"],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        info = json.loads(result.stdout)
-
+        # Try dynamic references first (PipeWire / PulseAudio 14+).
+        # They follow the current default device, so recording survives
+        # hot-switching between speakers, headphones, etc.
         if monitor == "auto":
-            default_sink = info.get("default_sink_name") or info.get("default_sink", "")
-            if not default_sink:
-                raise RuntimeError(
-                    "No default sink found. Run 'pactl list sources short' to check devices."
-                )
-            monitor = f"{default_sink}.monitor"
+            if _probe_source("@DEFAULT_MONITOR@"):
+                monitor = "@DEFAULT_MONITOR@"
+            else:
+                monitor = _resolve_monitor_via_pactl()
 
         if mic == "auto":
-            default_source = info.get("default_source_name") or info.get("default_source", "")
-            if not default_source:
-                raise RuntimeError(
-                    "No default source found. Run 'pactl list sources short' to check devices."
-                )
-            mic = default_source
+            if _probe_source("@DEFAULT_SOURCE@"):
+                mic = "@DEFAULT_SOURCE@"
+            else:
+                mic = _resolve_source_via_pactl()
 
     return monitor, mic
+
+
+def _probe_source(source_name: str) -> bool:
+    """Return True if parecord can open the given source (quick 0.2s test)."""
+    if not shutil.which("parecord"):
+        return False
+    try:
+        proc = subprocess.Popen(
+            [
+                "parecord",
+                f"--device={source_name}",
+                "--format=s16le",
+                "--rate=16000",
+                "--channels=1",
+                "/dev/null",
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+        )
+        time.sleep(0.2)
+        proc.terminate()
+        proc.wait(timeout=2)
+        # If parecord ran for 0.2s without crashing, the source exists
+        return proc.returncode is not None
+    except Exception:
+        return False
+
+
+def _resolve_monitor_via_pactl() -> str:
+    """Resolve monitor source from pactl info (legacy fallback)."""
+    result = subprocess.run(
+        ["pactl", "--format=json", "info"],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    info = json.loads(result.stdout)
+    default_sink = info.get("default_sink_name") or info.get("default_sink", "")
+    if not default_sink:
+        raise RuntimeError(
+            "No default sink found. Run 'pactl list sources short' to check devices."
+        )
+    return f"{default_sink}.monitor"
+
+
+def _resolve_source_via_pactl() -> str:
+    """Resolve default source from pactl info (legacy fallback)."""
+    result = subprocess.run(
+        ["pactl", "--format=json", "info"],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    info = json.loads(result.stdout)
+    default_source = info.get("default_source_name") or info.get("default_source", "")
+    if not default_source:
+        raise RuntimeError(
+            "No default source found. Run 'pactl list sources short' to check devices."
+        )
+    return default_source
 
 
 def _terminate_process(pid: int) -> None:

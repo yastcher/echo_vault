@@ -175,42 +175,78 @@ def filter_silent_segments(
 
 def split_on_silence(
     segments: list[Segment],
-    raw_samples: np.ndarray,
+    mic_samples: np.ndarray,
     sample_rate: int,
     pause_threshold: float = 1.0,
-    rms_threshold: float = 200.0,
+    monitor_samples: np.ndarray | None = None,
 ) -> list[Segment]:
-    """Split segments at silence gaps detected in raw audio.
+    """Split segments at silence gaps detected in raw mic audio.
 
-    Scans raw audio in 100ms windows within each segment. When a contiguous
-    silence region (RMS < rms_threshold) lasts >= pause_threshold seconds,
-    the segment is split at the midpoint of that silence.
+    Uses an adaptive threshold: a window is "silent" when mic RMS is below
+    the segment's median RMS * 0.4.  When a monitor channel is provided,
+    a window also counts as silent when the monitor is louder than the mic
+    (mic_rms < monitor_rms * 0.3) — the user is quiet while the remote
+    speaker is active.
 
-    More reliable than word-timestamp-based splitting because it uses the
-    actual audio signal rather than Whisper's (sometimes inaccurate) timing.
+    A contiguous silent region >= pause_threshold seconds triggers a split.
     """
     window_dur = 0.1  # 100ms windows
     window_samples = int(window_dur * sample_rate)
     result: list[Segment] = []
 
     for seg in segments:
-        sf = max(0, min(int(seg.start * sample_rate), len(raw_samples)))
-        ef = max(0, min(int(seg.end * sample_rate), len(raw_samples)))
+        sf = max(0, min(int(seg.start * sample_rate), len(mic_samples)))
+        ef = max(0, min(int(seg.end * sample_rate), len(mic_samples)))
 
         if ef - sf < window_samples:
             result.append(seg)
             continue
 
-        # Compute RMS per window
+        # Compute mic RMS per window
+        mic_rms_values: list[tuple[float, float]] = []  # (time, rms)
+        monitor_rms_values: list[float] = []
+
+        for i in range(sf, ef, window_samples):
+            end_i = min(i + window_samples, ef)
+            chunk = mic_samples[i:end_i]
+            rms = float(np.sqrt(np.mean(chunk.astype(np.float64) ** 2)))
+            t = i / sample_rate
+            mic_rms_values.append((t, rms))
+
+            if monitor_samples is not None:
+                ms = max(0, min(i, len(monitor_samples)))
+                me = max(0, min(end_i, len(monitor_samples)))
+                if me > ms:
+                    mon_rms = float(
+                        np.sqrt(np.mean(monitor_samples[ms:me].astype(np.float64) ** 2))
+                    )
+                else:
+                    mon_rms = 0.0
+                monitor_rms_values.append(mon_rms)
+
+        if not mic_rms_values:
+            result.append(seg)
+            continue
+
+        # Adaptive threshold: 40% of median mic RMS within this segment
+        all_rms = [r for _, r in mic_rms_values]
+        median_rms = float(np.median(all_rms))
+        adaptive_threshold = median_rms * 0.4
+
+        # Detect silent windows
         silence_start: float | None = None
         split_points: list[float] = []
 
-        for i in range(sf, ef, window_samples):
-            chunk = raw_samples[i : min(i + window_samples, ef)]
-            rms = float(np.sqrt(np.mean(chunk.astype(np.float64) ** 2)))
-            t = i / sample_rate
+        for idx, (t, mic_rms) in enumerate(mic_rms_values):
+            is_quiet = mic_rms < adaptive_threshold
 
-            if rms < rms_threshold:
+            # Monitor-relative check: mic is much quieter than monitor
+            if not is_quiet and monitor_rms_values:
+                mon_rms = monitor_rms_values[idx]
+                if mon_rms > 0 and mic_rms < mon_rms * 0.3:
+                    is_quiet = True
+
+            if is_quiet:
                 if silence_start is None:
                     silence_start = t
             else:

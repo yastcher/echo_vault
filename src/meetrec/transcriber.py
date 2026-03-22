@@ -87,6 +87,7 @@ class Transcriber:
             beam_size=self._settings.beam_size,
             vad_filter=self._settings.vad_filter,
             word_timestamps=True,
+            condition_on_previous_text=self._settings.condition_on_previous_text,
         )
 
         segments: list[Segment] = []
@@ -101,6 +102,7 @@ class Transcriber:
                     beam_size=self._settings.beam_size,
                     vad_filter=self._settings.vad_filter,
                     word_timestamps=True,
+                    condition_on_previous_text=self._settings.condition_on_previous_text,
                 )
                 segments = self._collect_segments(segments_iter)
             else:

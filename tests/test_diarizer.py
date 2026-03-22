@@ -467,3 +467,40 @@ def test_split_on_silence_short_pause_ignored(stereo_wav):
     result = split_on_silence([seg], mic_raw, sr, pause_threshold=1.0)
 
     assert len(result) == 1
+
+
+def test_split_on_silence_monitor_relative(stereo_wav):
+    """When mic is quiet but monitor is loud, detect pause via monitor ratio."""
+    # Simulates: user speaks (0-2s), then stops while remote speaks (2-4s),
+    # then user speaks again (4-6s). Mic has low noise during 2-4s but not zero.
+    wav_path = stereo_wav(
+        [
+            (2.0, 0.8, 0.0),  # user speaking, no monitor
+            (2.0, 0.05, 0.8),  # user quiet, monitor loud (pause)
+            (2.0, 0.8, 0.0),  # user speaking again
+        ]
+    )
+    mic_raw, monitor_raw, sr = load_stereo_channels(wav_path)
+
+    seg = Segment(
+        start=0.0,
+        end=6.0,
+        text="hello world",
+        words=[
+            Word(start=0.5, end=1.5, word="hello", probability=0.9),
+            Word(start=4.5, end=5.5, word="world", probability=0.9),
+        ],
+        speaker="You",
+    )
+
+    result = split_on_silence(
+        [seg],
+        mic_raw,
+        sr,
+        pause_threshold=1.0,
+        monitor_samples=monitor_raw,
+    )
+
+    assert len(result) == 2
+    assert result[0].text == "hello"
+    assert result[1].text == "world"
