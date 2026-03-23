@@ -24,11 +24,17 @@ jobs:
       - name: Install dependencies
         run: uv sync --group dev
 
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
       - name: Lint
         run: uv run ruff check
 
       - name: Format check
         run: uv run ruff format --check
 
-      - name: Tests
-        run: uv run pytest
+      - name: Type check
+        run: uv run mypy
+
+      - name: Tests with coverage
+        run: uv run pytest --tb=short

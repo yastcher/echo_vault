@@ -143,8 +143,8 @@ def _stop_and_process(
         segments=segments,
         session_name=session_name,
         audio_rel_path=audio_rel_path,
-        duration_seconds=info.get("duration", 0.0),
-        language=info.get("language", settings.language),
+        duration_seconds=float(info.get("duration", 0.0)),
+        language=str(info.get("language", settings.language)),
     )
 
     md_path = save_markdown_to_vault(markdown, settings, session_name)
@@ -206,8 +206,8 @@ def process(audio_file: str, name: str | None, no_diarize: bool, no_summarize: b
         segments=segments,
         session_name=name,
         audio_rel_path=audio_rel_path,
-        duration_seconds=info.get("duration", 0.0),
-        language=info.get("language", settings.language),
+        duration_seconds=float(info.get("duration", 0.0)),
+        language=str(info.get("language", settings.language)),
     )
 
     md_path = save_markdown_to_vault(markdown, settings, name)
@@ -277,7 +277,7 @@ def _get_stereo_source(audio_path: Path) -> Path | None:
 
         if get_channel_count(audio_path) == 2:
             return audio_path
-    except Exception:
+    except Exception:  # noqa: S110 — non-stereo or unreadable files are expected
         pass
     return None
 
@@ -296,7 +296,7 @@ def summarize(file: str, provider: str | None, model: str | None) -> None:
     settings = get_settings()
 
     if provider:
-        settings.llm_provider = provider
+        settings.llm_provider = provider  # type: ignore[assignment]  # validated by click.Choice
     if model:
         settings.llm_model = model
 

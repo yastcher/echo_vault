@@ -37,10 +37,13 @@ class Diarizer:
         from pyannote.audio import Pipeline
 
         self._settings = settings
-        self._pipeline = Pipeline.from_pretrained(
+        pipeline = Pipeline.from_pretrained(
             "pyannote/speaker-diarization-3.1",
             token=settings.hf_token,
         )
+        if pipeline is None:
+            raise RuntimeError("Failed to load pyannote diarization pipeline")
+        self._pipeline = pipeline
 
         if settings.clustering_threshold is not None:
             params = self._pipeline.parameters(instantiated=True)
@@ -69,7 +72,7 @@ class Diarizer:
             kwargs["max_speakers"] = self._settings.max_speakers
 
         try:
-            diarization = self._pipeline(audio_path, **kwargs)
+            diarization = self._pipeline(audio_path, **kwargs)  # type: ignore[arg-type]
         except RuntimeError as exc:
             if "CUDA" not in str(exc) and "out of memory" not in str(exc):
                 raise
@@ -78,7 +81,7 @@ class Diarizer:
                 file=sys.stderr,
             )
             self._fallback_to_cpu()
-            diarization = self._pipeline(audio_path, **kwargs)
+            diarization = self._pipeline(audio_path, **kwargs)  # type: ignore[arg-type]
 
         # pyannote 4.x returns DiarizeOutput wrapping Annotation
         annotation = _unwrap_diarization(diarization)
@@ -239,12 +242,11 @@ def split_on_silence(
             if is_quiet:
                 if silence_start is None:
                     silence_start = t
-            else:
-                if silence_start is not None:
-                    silence_dur = t - silence_start
-                    if silence_dur >= pause_threshold:
-                        split_points.append(silence_start + silence_dur / 2)
-                    silence_start = None
+            elif silence_start is not None:
+                silence_dur = t - silence_start
+                if silence_dur >= pause_threshold:
+                    split_points.append(silence_start + silence_dur / 2)
+                silence_start = None
 
         # Check trailing silence
         if silence_start is not None:
@@ -277,18 +279,17 @@ def split_on_silence(
                         speaker=seg.speaker,
                     )
                 )
-            else:
-                # No words — keep the sub-segment with original text proportioned
-                if sub_end - sub_start >= 0.5:
-                    result.append(
-                        Segment(
-                            start=sub_start,
-                            end=sub_end,
-                            text=seg.text,
-                            words=None,
-                            speaker=seg.speaker,
-                        )
+            # No words — keep the sub-segment with original text proportioned
+            elif sub_end - sub_start >= 0.5:
+                result.append(
+                    Segment(
+                        start=sub_start,
+                        end=sub_end,
+                        text=seg.text,
+                        words=None,
+                        speaker=seg.speaker,
                     )
+                )
 
     return result
 

@@ -98,7 +98,7 @@ def _resolve_monitor_via_pactl() -> str:
         text=True,
         check=True,
     )
-    info = json.loads(result.stdout)
+    info: dict[str, str] = json.loads(result.stdout)
     default_sink = info.get("default_sink_name") or info.get("default_sink", "")
     if not default_sink:
         raise RuntimeError(
@@ -115,7 +115,7 @@ def _resolve_source_via_pactl() -> str:
         text=True,
         check=True,
     )
-    info = json.loads(result.stdout)
+    info: dict[str, str] = json.loads(result.stdout)
     default_source = info.get("default_source_name") or info.get("default_source", "")
     if not default_source:
         raise RuntimeError(
@@ -271,4 +271,5 @@ class Recorder:
         """Return session info dict if recording, else None."""
         if not self.is_recording():
             return None
-        return json.loads(self._session_file.read_text())
+        data: SessionData = json.loads(self._session_file.read_text())
+        return data

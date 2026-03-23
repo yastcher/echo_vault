@@ -4,6 +4,7 @@ import json
 import os
 import re
 import time
+from pathlib import Path
 
 import click
 
@@ -140,28 +141,31 @@ def _call_llm_once(
     if settings.llm_provider == "anthropic":
         import anthropic
 
-        client = anthropic.Anthropic(api_key=api_key)
-        response = client.messages.create(
+        ant_client = anthropic.Anthropic(api_key=api_key)
+        ant_response = ant_client.messages.create(
             model=model,
             max_tokens=4096,
             system=system_prompt,
             messages=[{"role": "user", "content": user_message}],
         )
-        return response.content[0].text
+        block = ant_response.content[0]
+        assert hasattr(block, "text")  # Always TextBlock for non-streaming
+        return block.text
 
     # All other providers use OpenAI-compatible Chat Completions API
     import openai
 
     base_url = _OPENAI_COMPATIBLE_BASE_URLS.get(settings.llm_provider)
-    client = openai.OpenAI(api_key=api_key, base_url=base_url)
-    response = client.chat.completions.create(
+    oai_client = openai.OpenAI(api_key=api_key, base_url=base_url)
+    oai_response = oai_client.chat.completions.create(
         model=model,
         messages=[
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_message},
         ],
     )
-    return response.choices[0].message.content
+    content = oai_response.choices[0].message.content
+    return content or ""
 
 
 def _parse_response(raw: str) -> Summary:
@@ -259,15 +263,13 @@ def inject_summary_into_markdown(existing_md: str, summary_md: str) -> str:
     return frontmatter + summary_md + rest
 
 
-def maybe_summarize(md_path: str | None, settings: Settings) -> None:
+def maybe_summarize(md_path: Path | str | None, settings: Settings) -> None:
     """Summarize a transcript file if summarization is enabled and API key is available.
 
     Called from CLI after saving transcript. Failures are non-fatal.
     """
     if md_path is None:
         return
-
-    from pathlib import Path
 
     path = Path(md_path) if isinstance(md_path, str) else md_path
 

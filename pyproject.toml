@@ -1,6 +1,6 @@
 [project]
 name = "echo-vault"
-version = "0.2.0"
+version = "0.6.0"
 description = "Local meeting audio recorder with transcription for Obsidian"
 readme = "README.md"
 authors = [{ name = "Yast", email = "yastcher@gmail.com" }]
@@ -31,6 +31,7 @@ dev = [
     "ruff>=0.9.0",
     "pytest>=9.0.0",
     "pytest-cov>=6.0.0",
+    "mypy>=1.14.0",
 ]
 
 [tool.ruff]
@@ -41,8 +42,20 @@ exclude = [
 ]
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+select = ["E", "W", "F", "I", "UP", "B", "G", "PLC", "PLR", "SIM", "S", "RUF"]
+ignore = [
+    "S603",    # subprocess calls are safe (list-based, no shell)
+    "S607",    # partial executable paths (ffmpeg, parecord) are intentional
+    "PLR2004", # magic numbers — too noisy for audio/test code
+    "S108",    # /tmp/meetrec is intentional, secured with 0700 permissions
+]
 fixable = ["ALL"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["S101", "S105", "S106", "PLC0415"]  # assert, fake tokens, local imports in tests
+"src/meetrec/cli.py" = ["PLC0415"]         # lazy imports for heavy ML deps
+"src/meetrec/diarizer.py" = ["PLC0415", "PLR0912", "PLR0915"]  # lazy ML imports, complex audio algorithms
+"src/meetrec/summarizer.py" = ["PLC0415", "S101"]  # lazy imports for SDKs, assert for type narrowing
 
 [tool.ruff.lint.isort]
 known-local-folder = ["meetrec", "tests"]
@@ -60,7 +73,27 @@ source = ["src/meetrec"]
 
 [tool.coverage.report]
 show_missing = true
+fail_under = 85
 exclude_lines = [
     "if TYPE_CHECKING:",
     "pragma: no cover",
 ]
+
+[tool.mypy]
+strict = true
+python_version = "3.14"
+files = ["src/meetrec"]
+
+[[tool.mypy.overrides]]
+module = [
+    "faster_whisper.*",
+    "pyannote.*",
+    "torch.*",
+    "torchaudio.*",
+]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "meetrec.diarizer"
+# pyannote Pipeline stubs are incomplete (Pipeline | None, broken __call__)
+disallow_any_expr = false

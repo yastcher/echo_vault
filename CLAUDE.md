@@ -31,7 +31,8 @@ No web servers, databases, Docker, GUI.
 
 - Lint: `uv run ruff check --fix`
 - Format: `uv run ruff format`
-- Test: `uv run pytest` (coverage enabled by default via pyproject.toml)
+- Type check: `uv run mypy`
+- Test: `uv run pytest` (coverage ≥85% enforced via pyproject.toml)
 
 ## Code style
 
@@ -73,11 +74,21 @@ Do not duplicate ruff rules here — if ruff can check it, ruff owns it.
 0. `git diff --stat` — assess scope of changes
 1. `uv run ruff check --fix`
 2. `uv run ruff format`
-3. `uv run pytest`
-4. Security review: no hardcoded secrets, no injection, no unvalidated input
-5. **Always update README.md** when features, settings, commands, or architecture change
+3. `uv run mypy`
+4. `uv run pytest`
+5. Security review (see checklist below)
+6. **Always update README.md** when features, settings, commands, or architecture change
+7. **Always update CHANGELOG.md** — add entries under `## [Unreleased]` or current version
 
-Do not finish until lint and tests pass.
+Do not finish until lint, types, and tests pass.
+
+## Security review checklist
+
+Before completing any change, verify:
+
+- **P0 (critical)**: No hardcoded secrets/tokens/passwords. No `shell=True` in subprocess. No user input in SQL/commands.
+- **P1 (high)**: File paths validated. Temp files use restrictive permissions. API keys not leaked in logs/errors.
+- **P2 (medium)**: Input validated at system boundaries. Error messages don't expose internals. Dependencies up to date.
 
 ## Gotchas
 
