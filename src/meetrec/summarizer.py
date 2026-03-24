@@ -192,7 +192,7 @@ def summarize(transcript: str, settings: Settings) -> Summary:
     try:
         raw = _call_llm(_SYSTEM_PROMPT, transcript, settings)
         return _parse_response(raw)
-    except json.JSONDecodeError, KeyError:
+    except (json.JSONDecodeError, KeyError):
         # Retry once with shorter prompt
         raw = _call_llm(_RETRY_PROMPT, transcript, settings)
         try:

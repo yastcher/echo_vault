@@ -254,7 +254,7 @@ class Recorder:
 
         try:
             session: SessionData = json.loads(self._session_file.read_text())
-        except json.JSONDecodeError, KeyError:
+        except (json.JSONDecodeError, KeyError):
             return False
 
         for key in ("pid_monitor", "pid_mic"):

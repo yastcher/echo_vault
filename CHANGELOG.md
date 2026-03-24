@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] — YYYY-MM-DD
+
+### Changed
+- License changed from proprietary to Apache-2.0
+- Minimum Python version lowered from 3.14 to 3.13
+- README rewritten with installation instructions, configuration reference, architecture overview
+
+### Added
+- PyPI publishing via GitHub Actions (Trusted Publisher)
+- GitHub Release automation with changelog extraction
+- AUR PKGBUILD (`packaging/PKGBUILD`)
+- Nix flake (`flake.nix`)
+- VHS demo script (`packaging/demo.tape`)
+
 ## [0.6.0] — 2026-03-23
 
 ### Added

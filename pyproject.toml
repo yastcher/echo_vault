@@ -1,10 +1,22 @@
 [project]
 name = "echo-vault"
-version = "0.6.0"
-description = "Local meeting audio recorder with transcription for Obsidian"
+version = "0.7.0"
+description = "Local meeting recorder with transcription and speaker diarization for Obsidian"
 readme = "README.md"
 authors = [{ name = "Yast", email = "yastcher@gmail.com" }]
-requires-python = ">=3.14"
+requires-python = ">=3.13"
+license = { text = "Apache-2.0" }
+keywords = ["meeting", "transcription", "whisper", "diarization", "obsidian", "pipewire"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Multimedia :: Sound/Audio :: Speech",
+    "License :: OSI Approved :: Apache Software License",
+]
 dependencies = [
     "faster-whisper>=1.0.0",
     "pydantic-settings>=2.0.0",
@@ -18,6 +30,12 @@ dependencies = [
 
 [project.scripts]
 meetrec = "meetrec.cli:cli"
+
+[project.urls]
+Homepage = "https://github.com/yastcher/echo-vault"
+Repository = "https://github.com/yastcher/echo-vault"
+Issues = "https://github.com/yastcher/echo-vault/issues"
+Changelog = "https://github.com/yastcher/echo-vault/blob/main/CHANGELOG.md"
 
 [build-system]
 requires = ["hatchling"]
@@ -35,7 +53,7 @@ dev = [
 ]
 
 [tool.ruff]
-target-version = "py314"
+target-version = "py313"
 line-length = 100
 exclude = [
     ".claude",
@@ -81,7 +99,7 @@ exclude_lines = [
 
 [tool.mypy]
 strict = true
-python_version = "3.14"
+python_version = "3.13"
 files = ["src/meetrec"]
 
 [[tool.mypy.overrides]]

@@ -1,0 +1,31 @@
+# Maintainer: Yast <yastcher@gmail.com>
+pkgname=echo-vault
+pkgver=0.7.0
+pkgrel=1
+pkgdesc="Local meeting recorder with transcription and speaker diarization for Obsidian"
+arch=('any')
+url="https://github.com/yastcher/echo-vault"
+license=('Apache-2.0')
+depends=(
+    'python>=3.13'
+    'ffmpeg'
+    'pipewire-pulse'
+    'python-pip'
+)
+optdepends=(
+    'cuda: GPU-accelerated transcription'
+)
+makedepends=('python-build' 'python-installer' 'python-hatchling')
+source=("$pkgname-$pkgver.tar.gz::https://github.com/yastcher/echo-vault/archive/v$pkgver.tar.gz")
+sha256sums=('SKIP')
+
+build() {
+    cd "$pkgname-$pkgver"
+    python -m build --wheel --no-isolation
+}
+
+package() {
+    cd "$pkgname-$pkgver"
+    python -m installer --destdir="$pkgdir" dist/*.whl
+    install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

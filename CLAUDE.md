@@ -4,9 +4,9 @@
 
 CLI tool for recording meeting audio (Google Meet, Zoom, Teams, Telegram — any platform) on Linux via PulseAudio/PipeWire system audio capture. Transcribes locally with faster-whisper, saves markdown to Obsidian vault.
 
-Stack: Python 3.14+, click, faster-whisper, pydantic-settings, anthropic/openai, ffmpeg, parecord.
+Stack: Python 3.13+, click, faster-whisper, pydantic-settings, anthropic/openai, ffmpeg, parecord.
 
-No web servers, databases, Docker, GUI.
+No web servers, databases, Docker.
 
 ## Safety rules
 
@@ -67,7 +67,7 @@ Do not duplicate ruff rules here — if ruff can check it, ruff owns it.
 - Never use absolute paths in code or configs
 - Never add wav2vec2 or alternative diarization models — only pyannote
 - Never add translation — future phase
-- Never add GUI, web server, REST API
+- Never add web server, REST API
 
 ## Before finishing
 

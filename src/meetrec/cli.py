@@ -3,15 +3,12 @@ import signal
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 import click
 
+from meetrec.models import Segment
+from meetrec.recorder import Recorder, detect_devices
 from meetrec.settings import Settings, get_settings
-
-if TYPE_CHECKING:
-    from meetrec.models import Segment
-    from meetrec.recorder import Recorder
 
 
 @click.group()
@@ -29,8 +26,6 @@ def start(name: str | None, no_diarize: bool, no_summarize: bool) -> None:
     Runs in foreground — press Ctrl+C to stop and transcribe.
     """
     settings = get_settings()
-
-    from meetrec.recorder import Recorder, detect_devices
 
     recorder = Recorder()
 
@@ -60,9 +55,6 @@ def start(name: str | None, no_diarize: bool, no_summarize: bool) -> None:
 def stop() -> None:
     """Stop recording, transcribe, and save to vault."""
     settings = get_settings()
-
-    from meetrec.recorder import Recorder
-
     recorder = Recorder()
     _stop_and_process(recorder, settings, diarize=True, do_summarize=True)
 
