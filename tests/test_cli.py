@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from meetrec.cli import _maybe_diarize, _stop_and_process, cli
+from meetrec.cli import _maybe_diarize, _process_stereo_file, _stop_and_process, cli
 from meetrec.models import Segment
 from meetrec.settings import Settings
 from tests.fixtures import (
@@ -114,43 +114,37 @@ def test_process_with_diarization(runner, tmp_path, monkeypatch):
 
 
 @pytest.mark.skipif(not shutil.which("ffmpeg"), reason="ffmpeg required")
-def test_process_stereo_file(runner, tmp_path, monkeypatch):
-    """process command with stereo WAV: detects stereo, uses for channel attribution."""
+def test_process_stereo_dual_channel(runner, tmp_path, monkeypatch):
+    """process command with stereo WAV: auto-detects stereo, uses dual-channel pipeline.
+
+    Dual-channel pipeline: split channels → transcribe each → mic gets "You" label.
+    """
     vault = tmp_path / "vault"
     vault.mkdir()
     monkeypatch.setenv("MEETREC_VAULT_PATH", str(vault))
-    monkeypatch.setenv("MEETREC_HF_TOKEN", "hf_fake")
+    monkeypatch.setenv("MEETREC_DIARIZE", "false")
 
     audio = tmp_path / "2026-03-20_10-00-00.wav"
     create_stereo_wav_segments(audio, 48000, [(1.0, 0.8, 0.003), (1.0, 0.003, 0.8)])
 
     mock_model = mock_whisper_transcribe(
         [
-            (0.0, 5.0, "User speech."),
-            (5.0, 10.0, "Remote speech."),
-        ]
-    )
-    annotation = mock_pyannote_annotation(
-        [
-            (0.0, 5.0, "SPEAKER_00"),
-            (5.0, 10.0, "SPEAKER_01"),
+            (0.0, 1.0, "Channel speech."),
         ]
     )
 
-    with (
-        patch("meetrec.transcriber.WhisperModel", return_value=mock_model),
-        patch("pyannote.audio.Pipeline") as mock_pipeline_cls,
-    ):
-        mock_pipeline = MagicMock()
-        mock_pipeline_cls.from_pretrained.return_value = mock_pipeline
-        mock_pipeline.return_value = annotation
+    with patch("meetrec.transcriber.WhisperModel", return_value=mock_model):
+        result = runner.invoke(cli, ["process", str(audio), "--no-diarize"])
 
-        result = runner.invoke(cli, ["process", str(audio)])
+    assert result.exit_code == 0, result.output + str(result.exception or "")
 
-    assert result.exit_code == 0, result.output
+    # Dual-channel pipeline transcribes each channel separately (2 calls)
+    assert mock_model.transcribe.call_count == 2
+
     md_content = (vault / "meetings" / "2026-03-20_10-00-00.md").read_text()
-    assert "User speech." in md_content
-    assert "Remote speech." in md_content
+    # Mic channel gets "You" label automatically in stereo pipeline
+    assert "**You:**" in md_content
+    assert "Stereo file detected" in result.output
 
 
 # --- status command ---
@@ -256,6 +250,31 @@ def test_stop_and_process_no_diarize(tmp_path):
 
 
 # --- _maybe_diarize ---
+
+
+@pytest.mark.skipif(not shutil.which("ffmpeg"), reason="ffmpeg required")
+def test_process_stereo_file_function(tmp_path):
+    """_process_stereo_file: splits channels, transcribes each, merges."""
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    settings = Settings(vault_path=vault)
+
+    stereo = tmp_path / "stereo.wav"
+    create_stereo_wav_segments(stereo, 48000, [(1.0, 0.8, 0.003), (1.0, 0.003, 0.8)])
+
+    output_dir = tmp_path / "output"
+    output_dir.mkdir()
+
+    mock_model = mock_whisper_transcribe([(0.0, 1.0, "Speech.")])
+
+    with patch("meetrec.transcriber.WhisperModel", return_value=mock_model):
+        segments, _info = _process_stereo_file(stereo, output_dir, settings, diarize=False)
+
+    assert len(segments) > 0
+    # Mic segments get "You" from transcribe_stereo
+    you_segments = [s for s in segments if s.speaker == "You"]
+    assert len(you_segments) > 0
+    assert mock_model.transcribe.call_count == 2
 
 
 def test_maybe_diarize_skips_and_warns(runner, tmp_path):

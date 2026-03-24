@@ -46,8 +46,11 @@ Do not duplicate ruff rules here — if ruff can check it, ruff owns it.
 
 - pytest with mocks only at system boundaries (subprocess, file I/O)
 - Audio tests with real ffmpeg marked `@pytest.mark.skipif(not shutil.which("ffmpeg"))`
-- Fixtures and WAV helpers in tests/fixtures.py
-- Regression tests (bug-fix) in tests/regressions/
+- **All fixtures** in `tests/fixtures.py` (registered via `conftest.py`) — never define fixtures in test files
+- **All imports at top of file** in tests — same rule as production code, no local imports
+- WAV helpers in `tests/fixtures.py`
+- E2E tests in `tests/test_e2e_quality.py` — run with `MEETREC_RUN_E2E=1`
+- Regression tests (bug-fix) in `tests/regressions/`
 - **Bug fix workflow**: every fix MUST start with a failing test that reproduces the bug.
   Write the test first, verify it fails, then apply the fix and verify the test passes.
   This prevents regressions and documents the exact failure scenario.

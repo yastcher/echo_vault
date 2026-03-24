@@ -1,4 +1,5 @@
 import json
+import os
 import wave
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -57,6 +58,25 @@ def stereo_wav(tmp_path):
         return path
 
     return _create
+
+
+@pytest.fixture
+def e2e_settings(tmp_path):
+    """Settings for e2e tests with HF token from environment."""
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    return Settings(
+        vault_path=vault,
+        hf_token=os.environ.get("MEETREC_HF_TOKEN", os.environ.get("HF_TOKEN", "")),
+    )
+
+
+@pytest.fixture
+def e2e_output_dir(tmp_path):
+    """Temporary directory for intermediate pipeline files."""
+    d = tmp_path / "e2e_output"
+    d.mkdir()
+    return d
 
 
 # --- WAV file helpers ---
