@@ -226,10 +226,11 @@ def _process_stereo_file(
     # Diarize monitor channel to separate remote speakers
     if diarize and settings.diarize and settings.hf_token:
         click.echo("Diarizing speakers...", err=True)
-        from meetrec.diarizer import Diarizer, assign_speakers
+        from meetrec.diarizer import Diarizer, assign_speakers, merge_similar_speakers
 
         diarizer = Diarizer(settings)
         diarization_segments = diarizer.diarize(monitor_16k)
+        diarization_segments = merge_similar_speakers(diarization_segments, monitor_raw, raw_sr)
         monitor_segments = assign_speakers(monitor_segments, diarization_segments)
 
     # Merge both channels sorted by time

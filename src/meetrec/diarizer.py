@@ -417,6 +417,109 @@ def identify_user_speaker(
     return best_speaker
 
 
+def _speaker_spectral_profile(
+    monitor_samples: np.ndarray,
+    sample_rate: int,
+    diarization_segments: list[DiarizationSegment],
+    speaker: str,
+) -> np.ndarray:
+    """Compute average power spectrum for a speaker's segments.
+
+    Focuses on the 100-4000 Hz range which contains voice formant information.
+    Uses Hann-windowed FFT with 50 % overlap.
+    """
+    n_fft = 2048
+    freq_per_bin = sample_rate / n_fft
+    min_bin = max(1, int(100.0 / freq_per_bin))
+    max_bin = min(n_fft // 2 + 1, int(4000.0 / freq_per_bin) + 1)
+    n_bins = max_bin - min_bin
+
+    if n_bins <= 0:
+        return np.zeros(1)
+
+    window = np.hanning(n_fft)
+    spectra: list[np.ndarray] = []
+
+    for seg in diarization_segments:
+        if seg.speaker != speaker:
+            continue
+        sf = max(0, int(seg.start * sample_rate))
+        ef = min(len(monitor_samples), int(seg.end * sample_rate))
+        chunk = monitor_samples[sf:ef]
+
+        hop = n_fft // 2
+        for start in range(0, len(chunk) - n_fft, hop):
+            frame = chunk[start : start + n_fft].astype(np.float64)
+            spectrum = np.abs(np.fft.rfft(frame * window))[min_bin:max_bin]
+            spectra.append(spectrum)
+
+    if not spectra:
+        return np.zeros(n_bins)
+    result: np.ndarray = np.mean(spectra, axis=0)
+    return result
+
+
+def merge_similar_speakers(
+    diarization_segments: list[DiarizationSegment],
+    monitor_samples: np.ndarray,
+    sample_rate: int,
+    similarity_threshold: float = 0.92,
+) -> list[DiarizationSegment]:
+    """Merge pyannote speakers with similar spectral profiles.
+
+    Fixes over-segmentation where a single speaker is incorrectly split into
+    multiple speakers.  Uses power-spectrum cosine similarity in the 100-4000 Hz
+    voice frequency range.
+
+    Conservative threshold (default 0.92) ensures only very similar speakers
+    are merged, avoiding false merges of genuinely different speakers.
+    """
+    speakers = sorted({seg.speaker for seg in diarization_segments})
+    if len(speakers) <= 1:
+        return diarization_segments
+
+    profiles: dict[str, np.ndarray] = {}
+    for speaker in speakers:
+        profiles[speaker] = _speaker_spectral_profile(
+            monitor_samples, sample_rate, diarization_segments, speaker
+        )
+
+    merge_map: dict[str, str] = {s: s for s in speakers}
+
+    for i, sp_a in enumerate(speakers):
+        for sp_b in speakers[i + 1 :]:
+            if merge_map[sp_a] == merge_map[sp_b]:
+                continue
+
+            a_profile = profiles[sp_a]
+            b_profile = profiles[sp_b]
+
+            norm_a = float(np.linalg.norm(a_profile))
+            norm_b = float(np.linalg.norm(b_profile))
+            if norm_a < 1e-10 or norm_b < 1e-10:
+                continue
+
+            similarity = float(np.dot(a_profile, b_profile) / (norm_a * norm_b))
+            if similarity >= similarity_threshold:
+                target = merge_map[sp_b]
+                canonical = merge_map[sp_a]
+                for s in speakers:
+                    if merge_map[s] == target:
+                        merge_map[s] = canonical
+
+    if all(merge_map[s] == s for s in speakers):
+        return diarization_segments
+
+    return [
+        DiarizationSegment(
+            speaker=merge_map[seg.speaker],
+            start=seg.start,
+            end=seg.end,
+        )
+        for seg in diarization_segments
+    ]
+
+
 def assign_speakers(
     segments: list[Segment],
     diarization_segments: list[DiarizationSegment],

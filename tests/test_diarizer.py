@@ -3,6 +3,7 @@
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import numpy as np
 import pytest
 
 from meetrec.diarizer import (
@@ -12,6 +13,7 @@ from meetrec.diarizer import (
     identify_user_speaker,
     load_stereo_channels,
     merge_channel_segments,
+    merge_similar_speakers,
     split_on_silence,
 )
 from meetrec.models import DiarizationSegment, Segment, Word
@@ -378,3 +380,73 @@ def test_split_on_silence_monitor_relative(stereo_wav):
     assert len(result) == 2
     assert result[0].text == "hello"
     assert result[1].text == "world"
+
+
+# --- merge_similar_speakers ---
+
+
+def _voice_signal(duration: float, sr: int, fundamental: float) -> np.ndarray:
+    """Generate a synthetic voice signal with harmonics."""
+    t = np.linspace(0, duration, int(duration * sr), dtype=np.float32)
+    return (
+        np.sin(2 * np.pi * fundamental * t)
+        + 0.5 * np.sin(2 * np.pi * fundamental * 2 * t)
+        + 0.25 * np.sin(2 * np.pi * fundamental * 3 * t)
+    ) * 10000
+
+
+def test_merge_similar_speakers_same_voice():
+    """Two segments from the same voice should be merged into one speaker."""
+    sr = 16000
+    audio = _voice_signal(5.0, sr, fundamental=200.0)
+
+    segments = [
+        DiarizationSegment(speaker="SPEAKER_00", start=0.0, end=2.0),
+        DiarizationSegment(speaker="SPEAKER_01", start=2.5, end=5.0),
+    ]
+
+    merged = merge_similar_speakers(segments, audio, sr)
+    speakers = {seg.speaker for seg in merged}
+    assert len(speakers) == 1
+
+
+def test_merge_similar_speakers_different_voices():
+    """Two spectrally distinct speakers should NOT be merged."""
+    sr = 16000
+    n_samples = int(5.0 * sr)
+    audio = np.zeros(n_samples, dtype=np.float32)
+
+    # Speaker A: 200 Hz + harmonics (0-2 s)
+    audio[: int(2.0 * sr)] = _voice_signal(2.0, sr, fundamental=200.0)
+    # Speaker B: 800 Hz + harmonics (2.5-5 s)
+    start2 = int(2.5 * sr)
+    sig_b = _voice_signal(2.5, sr, fundamental=800.0)
+    audio[start2 : start2 + len(sig_b)] = sig_b
+
+    segments = [
+        DiarizationSegment(speaker="SPEAKER_00", start=0.0, end=2.0),
+        DiarizationSegment(speaker="SPEAKER_01", start=2.5, end=5.0),
+    ]
+
+    merged = merge_similar_speakers(segments, audio, sr)
+    speakers = {seg.speaker for seg in merged}
+    assert len(speakers) == 2
+
+
+def test_merge_similar_speakers_single_speaker():
+    """Single speaker should pass through unchanged."""
+    sr = 16000
+    audio = np.zeros(int(3.0 * sr), dtype=np.float32)
+
+    segments = [DiarizationSegment(speaker="SPEAKER_00", start=0.0, end=3.0)]
+
+    merged = merge_similar_speakers(segments, audio, sr)
+    assert len(merged) == 1
+    assert merged[0].speaker == "SPEAKER_00"
+
+
+def test_merge_similar_speakers_empty():
+    """Empty input returns empty output."""
+    sr = 16000
+    audio = np.zeros(sr, dtype=np.float32)
+    assert merge_similar_speakers([], audio, sr) == []
