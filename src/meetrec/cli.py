@@ -13,7 +13,25 @@ from meetrec.settings import Settings, get_settings
 
 @click.group()
 def cli() -> None:
-    """meetrec — local meeting recorder for Obsidian."""
+    """meetrec — local meeting recorder for Obsidian.
+
+    Records system audio + microphone via PipeWire/PulseAudio,
+    transcribes locally with Whisper, identifies speakers with pyannote,
+    saves Markdown notes to your Obsidian vault.
+
+    Works with any video call platform (Meet, Zoom, Teams, Telegram, Discord).
+
+    \b
+    Quick start:
+      export MEETREC_VAULT_PATH=~/Documents/obsidian/vault
+      meetrec start          # record (Ctrl+C to stop)
+      meetrec process a.mp3  # transcribe existing file
+
+    \b
+    Configuration:
+      All settings via MEETREC_* env vars or .env file.
+      See: https://github.com/yastcher/echo-vault#configuration
+    """
 
 
 @cli.command()
@@ -23,7 +41,13 @@ def cli() -> None:
 def start(name: str | None, no_diarize: bool, no_summarize: bool) -> None:
     """Start recording monitor source + microphone.
 
-    Runs in foreground — press Ctrl+C to stop and transcribe.
+    Records system audio (what you hear) and microphone (what you say)
+    into a stereo WAV file. Runs in foreground — press Ctrl+C to stop,
+    transcribe, and save to vault.
+
+    \b
+    Optionally provide a NAME for the output file:
+      meetrec start "weekly-standup"
     """
     settings = get_settings()
 
@@ -53,7 +77,11 @@ def start(name: str | None, no_diarize: bool, no_summarize: bool) -> None:
 
 @cli.command()
 def stop() -> None:
-    """Stop recording, transcribe, and save to vault."""
+    """Stop recording from another terminal.
+
+    Sends stop signal to a running 'meetrec start' process,
+    then transcribes and saves the recording to vault.
+    """
     settings = get_settings()
     recorder = Recorder()
     _stop_and_process(recorder, settings, diarize=True, do_summarize=True)
@@ -112,9 +140,18 @@ def _stop_and_process(
 def process(audio_file: str, name: str | None, no_diarize: bool, no_summarize: bool) -> None:
     """Process an existing audio file (mp3, m4a, ogg, wav).
 
+    Transcribes the file, identifies speakers, generates an LLM summary,
+    and saves everything as a Markdown note in your vault.
+
+    \b
     Stereo WAV files (from meetrec start) use the dual-channel pipeline
     with per-channel transcription and speaker attribution.
     All other files use mono processing.
+
+    \b
+    Examples:
+      meetrec process meeting.mp3
+      meetrec process call.wav --name "client-call" --no-diarize
     """
     settings = get_settings()
 
@@ -339,7 +376,20 @@ def _get_stereo_source(audio_path: Path) -> Path | None:
 )
 @click.option("--model", default=None, help="Override LLM model")
 def summarize(file: str, provider: str | None, model: str | None) -> None:
-    """Summarize an existing transcript markdown file."""
+    """Summarize an existing transcript markdown file.
+
+    Sends the transcript to an LLM and adds a summary section with
+    brief overview, action items, and key decisions.
+
+    \b
+    Requires an API key — set MEETREC_LLM_API_KEY or a provider-specific
+    env var (ANTHROPIC_API_KEY, GEMINI_API_KEY, etc.).
+
+    \b
+    Examples:
+      meetrec summarize vault/meetings/2026-03-26.md
+      meetrec summarize transcript.md --provider gemini
+    """
     settings = get_settings()
 
     if provider:
@@ -372,7 +422,11 @@ def summarize(file: str, provider: str | None, model: str | None) -> None:
 
 @cli.command()
 def status() -> None:
-    """Show current recording status and settings."""
+    """Show current recording status and settings.
+
+    Displays whether a recording is in progress, vault path,
+    Whisper model, device, and available audio sources.
+    """
     settings = get_settings()
 
     from meetrec.recorder import Recorder

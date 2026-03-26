@@ -5,19 +5,28 @@ All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.7.0] — YYYY-MM-DD
-
-### Changed
-- License changed from proprietary to Apache-2.0
-- Minimum Python version lowered from 3.14 to 3.13
-- README rewritten with installation instructions, configuration reference, architecture overview
+## [0.7.0] — 2026-03-26
 
 ### Added
+- LLM provider fallback chain — if primary provider fails, automatically tries next available provider
+- Spectral similarity speaker merging — reduces pyannote over-segmentation of single speakers
 - PyPI publishing via GitHub Actions (Trusted Publisher)
 - GitHub Release automation with changelog extraction
 - AUR PKGBUILD (`packaging/PKGBUILD`)
 - Nix flake (`flake.nix`)
 - VHS demo script (`packaging/demo.tape`)
+
+### Changed
+- License changed from proprietary to Apache-2.0
+- Minimum Python version lowered from 3.14 to 3.13
+- Type checker switched from mypy to ty (Astral)
+- `DEFAULT_MODELS` moved to `settings.py` as single source of truth
+- Default Gemini model updated to `gemini-2.5-flash` (2.0 deprecated)
+- README rewritten with installation guide, configuration reference, CLI examples, roadmap
+- CLI help texts expanded with examples and usage guidance
+
+### Fixed
+- Markdown fence stripping — LLM responses wrapped in ```json``` now parsed correctly
 
 ## [0.6.0] — 2026-03-23
 
