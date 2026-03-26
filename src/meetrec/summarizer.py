@@ -9,7 +9,7 @@ from pathlib import Path
 import click
 
 from meetrec.models import ActionItem, Summary
-from meetrec.settings import Settings
+from meetrec.settings import DEFAULT_MODELS, Settings
 
 _SYSTEM_PROMPT = """\
 You analyze meeting transcripts and extract structured information.
@@ -72,16 +72,6 @@ _FALLBACK_CHAIN: list[str] = [
     "openai",
 ]
 
-_DEFAULT_MODELS: dict[str, str] = {
-    "anthropic": "claude-sonnet-4-20250514",
-    "openai": "gpt-4o",
-    "groq": "llama-3.3-70b-versatile",
-    "gemini": "gemini-2.0-flash",
-    "openrouter": "google/gemma-3-27b-it:free",
-    "deepseek": "deepseek-chat",
-    "qwen": "qwen-turbo",
-}
-
 
 def _resolve_api_key_for_provider(provider: str, settings: Settings) -> str:
     """Resolve API key for a specific provider. Returns empty string if unavailable.
@@ -113,7 +103,7 @@ def _get_model(settings: Settings) -> str:
     """Return model name: explicit setting or provider default."""
     if settings.llm_model:
         return settings.llm_model
-    return _DEFAULT_MODELS[settings.llm_provider]
+    return DEFAULT_MODELS[settings.llm_provider]
 
 
 _MAX_RETRIES = 3
@@ -131,7 +121,7 @@ def _build_provider_chain(settings: Settings) -> list[tuple[str, str, str]]:
     primary = settings.llm_provider
     primary_key = _resolve_api_key_for_provider(primary, settings)
     if primary_key:
-        model = settings.llm_model or _DEFAULT_MODELS[primary]
+        model = settings.llm_model or DEFAULT_MODELS[primary]
         chain.append((primary, primary_key, model))
 
     for provider in _FALLBACK_CHAIN:
@@ -139,7 +129,7 @@ def _build_provider_chain(settings: Settings) -> list[tuple[str, str, str]]:
             continue
         key = _resolve_api_key_for_provider(provider, settings)
         if key:
-            chain.append((provider, key, _DEFAULT_MODELS[provider]))
+            chain.append((provider, key, DEFAULT_MODELS[provider]))
 
     return chain
 
@@ -241,9 +231,21 @@ def _call_llm_once(
     return content or ""
 
 
+def _strip_markdown_fences(raw: str) -> str:
+    """Strip markdown code fences (```json ... ```) from LLM response."""
+    stripped = raw.strip()
+    if stripped.startswith("```"):
+        # Remove opening fence (```json or ```)
+        first_newline = stripped.index("\n")
+        stripped = stripped[first_newline + 1 :]
+    if stripped.endswith("```"):
+        stripped = stripped[:-3]
+    return stripped.strip()
+
+
 def _parse_response(raw: str) -> Summary:
     """Parse JSON response into Summary dataclass."""
-    data = json.loads(raw)
+    data = json.loads(_strip_markdown_fences(raw))
     action_items = [
         ActionItem(
             assignee=item["assignee"],

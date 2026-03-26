@@ -13,6 +13,7 @@ import pytest
 from meetrec.cli import _maybe_diarize, _process_stereo_file, _stop_and_process, cli
 from meetrec.models import Segment
 from meetrec.settings import Settings
+from meetrec.summarizer import _PROVIDER_ENV_VARS
 from tests.fixtures import (
     create_mono_wav,
     create_silent_wav,
@@ -352,13 +353,14 @@ def test_summarize_command_no_api_key(runner, tmp_path, monkeypatch):
     vault.mkdir()
     monkeypatch.setenv("MEETREC_VAULT_PATH", str(vault))
     monkeypatch.delenv("MEETREC_LLM_API_KEY", raising=False)
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    for env_var in _PROVIDER_ENV_VARS.values():
+        monkeypatch.delenv(env_var, raising=False)
 
     md_file = tmp_path / "transcript.md"
     md_file.write_text(SAMPLE_TRANSCRIPT_MD)
 
-    result = runner.invoke(cli, ["summarize", str(md_file)])
+    with patch("meetrec.summarizer._build_provider_chain", return_value=[]):
+        result = runner.invoke(cli, ["summarize", str(md_file)])
 
     assert result.exit_code != 0
     assert md_file.read_text() == SAMPLE_TRANSCRIPT_MD

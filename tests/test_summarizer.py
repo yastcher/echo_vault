@@ -6,7 +6,7 @@ from unittest.mock import patch
 import pytest
 
 from meetrec.models import ActionItem, Summary
-from meetrec.settings import Settings
+from meetrec.settings import DEFAULT_MODELS, Settings
 from meetrec.summarizer import (
     _PROVIDER_ENV_VARS,
     _build_provider_chain,
@@ -211,6 +211,16 @@ def test_summarize_parses_valid_json(summarize_settings):
     assert result.is_trivial is False
 
 
+def test_summarize_strips_markdown_fences(summarize_settings):
+    """JSON wrapped in ```json ... ``` → parsed correctly."""
+    fenced = f"```json\n{VALID_LLM_RESPONSE}\n```"
+    with patch("meetrec.summarizer._call_llm", return_value=fenced):
+        result = summarize("transcript", summarize_settings)
+
+    assert result.brief == "Discussed the project plan and assigned tasks."
+    assert len(result.action_items) == 2
+
+
 def test_summarize_retries_on_invalid_json(summarize_settings):
     """First call returns garbage, second returns valid JSON → success."""
     with patch(
@@ -301,18 +311,7 @@ def test_api_key_resolution_meetrec_env(tmp_vault, monkeypatch):
     assert _resolve_api_key(settings) == "meetrec-key"
 
 
-@pytest.mark.parametrize(
-    "provider,env_var",
-    [
-        ("anthropic", "ANTHROPIC_API_KEY"),
-        ("openai", "OPENAI_API_KEY"),
-        ("groq", "GROQ_API_KEY"),
-        ("gemini", "GEMINI_API_KEY"),
-        ("openrouter", "OPENROUTER_API_KEY"),
-        ("deepseek", "DEEPSEEK_API_KEY"),
-        ("qwen", "DASHSCOPE_API_KEY"),
-    ],
-)
+@pytest.mark.parametrize("provider,env_var", list(_PROVIDER_ENV_VARS.items()))
 def test_api_key_resolution_provider_env(tmp_vault, monkeypatch, provider, env_var):
     """Falls back to provider-specific env var when MEETREC_LLM_API_KEY is empty."""
     monkeypatch.setenv(env_var, "test-key")
@@ -334,18 +333,7 @@ def test_api_key_missing_raises(tmp_vault, monkeypatch):
 # --- Model defaults ---
 
 
-@pytest.mark.parametrize(
-    "provider,expected_model",
-    [
-        ("anthropic", "claude-sonnet-4-20250514"),
-        ("openai", "gpt-4o"),
-        ("groq", "llama-3.3-70b-versatile"),
-        ("gemini", "gemini-2.0-flash"),
-        ("openrouter", "google/gemma-3-27b-it:free"),
-        ("deepseek", "deepseek-chat"),
-        ("qwen", "qwen-turbo"),
-    ],
-)
+@pytest.mark.parametrize("provider,expected_model", list(DEFAULT_MODELS.items()))
 def test_get_model_defaults(tmp_vault, provider, expected_model):
     """Each provider has a sensible default model."""
     settings = Settings(vault_path=tmp_vault, llm_provider=provider, llm_model="")
@@ -379,7 +367,7 @@ def test_build_provider_chain_primary_first(tmp_vault, monkeypatch):
     chain = _build_provider_chain(settings)
 
     assert len(chain) == 1
-    assert chain[0] == ("groq", "main-key", "llama-3.3-70b-versatile")
+    assert chain[0] == ("groq", "main-key", DEFAULT_MODELS["groq"])
 
 
 def test_build_provider_chain_includes_fallbacks(tmp_vault, monkeypatch):
@@ -419,7 +407,7 @@ def test_build_provider_chain_explicit_model_for_primary_only(tmp_vault, monkeyp
     chain = _build_provider_chain(settings)
 
     assert chain[0] == ("anthropic", "ant-key", "claude-opus-4-20250514")
-    assert chain[1] == ("groq", "groq-key", "llama-3.3-70b-versatile")
+    assert chain[1] == ("groq", "groq-key", DEFAULT_MODELS["groq"])
 
 
 def test_fallback_chain_tries_next_provider(summarize_settings):

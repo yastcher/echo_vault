@@ -3,6 +3,18 @@ from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# Default models per provider — used when MEETREC_LLM_MODEL is not set.
+# Update here when providers deprecate models.
+DEFAULT_MODELS: dict[str, str] = {
+    "anthropic": "claude-sonnet-4-20250514",
+    "openai": "gpt-4o",
+    "groq": "llama-3.3-70b-versatile",
+    "gemini": "gemini-2.5-flash",
+    "openrouter": "google/gemini-2.5-flash:free",
+    "deepseek": "deepseek-chat",
+    "qwen": "qwen-turbo",
+}
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
