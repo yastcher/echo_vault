@@ -261,14 +261,38 @@ def _process_stereo_file(
     _free_gpu_memory()
 
     # Diarize monitor channel to separate remote speakers
+    diarized = False
     if diarize and settings.diarize and settings.hf_token:
-        click.echo("Diarizing speakers...", err=True)
-        from meetrec.diarizer import Diarizer, assign_speakers, merge_similar_speakers
+        from meetrec.diarizer import diarization_available
 
-        diarizer = Diarizer(settings)
-        diarization_segments = diarizer.diarize(monitor_16k)
-        diarization_segments = merge_similar_speakers(diarization_segments, monitor_raw, raw_sr)
-        monitor_segments = assign_speakers(monitor_segments, diarization_segments)
+        if not diarization_available():
+            click.echo(
+                "Warning: pyannote-audio not installed, skipping diarization. "
+                "Install with: uv pip install echo-vault[diarize]",
+                err=True,
+            )
+        else:
+            click.echo("Diarizing speakers...", err=True)
+            from meetrec.diarizer import Diarizer, assign_speakers, merge_similar_speakers
+
+            diarizer = Diarizer(settings)
+            diarization_segments = diarizer.diarize(monitor_16k)
+            diarization_segments = merge_similar_speakers(diarization_segments, monitor_raw, raw_sr)
+            monitor_segments = assign_speakers(monitor_segments, diarization_segments)
+            diarized = True
+
+    # Default speaker for monitor segments when diarization is skipped
+    if not diarized and monitor_segments and monitor_segments[0].speaker is None:
+        monitor_segments = [
+            Segment(
+                start=s.start,
+                end=s.end,
+                text=s.text,
+                words=s.words,
+                speaker="Other",
+            )
+            for s in monitor_segments
+        ]
 
     # Merge both channels sorted by time
     segments = merge_channel_segments(mic_segments, monitor_segments)
@@ -337,6 +361,16 @@ def _maybe_diarize(
         click.echo(
             "Warning: MEETREC_HF_TOKEN not set, skipping diarization. "
             "See README for setup instructions.",
+            err=True,
+        )
+        return segments
+
+    from meetrec.diarizer import diarization_available
+
+    if not diarization_available():
+        click.echo(
+            "Warning: pyannote-audio not installed, skipping diarization. "
+            "Install with: uv pip install echo-vault[diarize]",
             err=True,
         )
         return segments

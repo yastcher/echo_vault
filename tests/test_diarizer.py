@@ -18,11 +18,12 @@ from meetrec.diarizer import (
 )
 from meetrec.models import DiarizationSegment, Segment, Word
 from meetrec.settings import Settings
-from tests.fixtures import create_stereo_wav, create_stereo_wav_segments
+from tests.fixtures import create_stereo_wav, create_stereo_wav_segments, requires_pyannote
 
 # --- Diarizer init / diarize ---
 
 
+@requires_pyannote
 def test_diarizer_init_without_token(tmp_vault):
     """Diarizer should raise RuntimeError when hf_token is empty."""
 
@@ -32,6 +33,7 @@ def test_diarizer_init_without_token(tmp_vault):
         Diarizer(settings)
 
 
+@requires_pyannote
 def test_diarizer_clustering_threshold(tmp_vault):
     """Diarizer should apply custom clustering_threshold, skip when None."""
 
@@ -64,6 +66,7 @@ def test_diarizer_clustering_threshold(tmp_vault):
     mock_pipeline.instantiate.assert_not_called()
 
 
+@requires_pyannote
 def test_diarize_returns_segments(tmp_vault):
     """Diarizer.diarize should return list of DiarizationSegment."""
 

@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] — 2026-03-26
+
+### Changed
+- Speaker diarization (pyannote/torch) moved to optional dependency: `uv pip install echo-vault[diarize]`
+- Base install no longer requires PyTorch (~2 GB smaller)
+- Monitor channel segments default to "Other" speaker when diarization is not available
+
 ## [0.7.0] — 2026-03-26
 
 ### Added

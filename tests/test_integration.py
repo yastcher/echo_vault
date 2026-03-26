@@ -2,11 +2,12 @@
 
 import shutil
 import wave
+from unittest.mock import patch
 
 import pytest
 
 from meetrec.audio import get_channel_count, merge_channels, split_channels_16k
-from meetrec.cli import _get_stereo_source
+from meetrec.cli import _get_stereo_source, _maybe_diarize
 from meetrec.diarizer import (
     assign_speakers,
     classify_segment_by_channel,
@@ -17,6 +18,7 @@ from meetrec.diarizer import (
 )
 from meetrec.formatter import format_markdown
 from meetrec.models import DiarizationSegment, Segment
+from meetrec.settings import Settings
 from tests.fixtures import create_mono_wav, create_stereo_wav, create_stereo_wav_segments
 
 
@@ -252,3 +254,21 @@ def test_get_stereo_source_detection(tmp_path):
     assert _get_stereo_source(mono) is None
     # Non-existent file returns None (no crash)
     assert _get_stereo_source(tmp_path / "nonexistent.wav") is None
+
+
+# --- Optional diarization ---
+
+
+def test_diarization_unavailable_warning(tmp_vault, capsys):
+    """CLI should warn when diarize=True but pyannote not installed."""
+    settings = Settings(vault_path=tmp_vault, diarize=True, hf_token="hf_fake")
+    segments = [Segment(start=0.0, end=5.0, text="Hello.")]
+
+    with patch("meetrec.diarizer.diarization_available", return_value=False):
+        result = _maybe_diarize(
+            segments, settings, mono_16k_path=tmp_vault / "fake.wav", stereo_path=None, diarize=True
+        )
+
+    assert result == segments
+    captured = capsys.readouterr()
+    assert "uv pip install echo-vault[diarize]" in captured.err

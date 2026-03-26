@@ -30,49 +30,59 @@ Works with any video call platform: Google Meet, Zoom, Teams, Telegram, Discord,
 
 ## Installation
 
-### From PyPI (recommended)
+### 1. System dependencies
 
 ```bash
-# Install as isolated CLI tool (recommended)
-uv tool install echo-vault
+# Arch / Manjaro
+sudo pacman -S python uv ffmpeg pipewire-pulse
 
-# Or with pip
-pip install echo-vault
+# Ubuntu / Debian
+sudo apt install python3 pipx ffmpeg pulseaudio-utils
+pipx ensurepath  # adds ~/.local/bin to PATH
+
+# Fedora
+sudo dnf install python3 pipx ffmpeg pipewire-pulseaudio
+pipx ensurepath
 ```
 
-### From source
+### 2. Install echo-vault
+
+#### With uv (recommended)
+
+```bash
+# Basic — recording + transcription
+uv tool install echo-vault
+
+# With speaker diarization (adds ~2 GB for PyTorch)
+uv tool install "echo-vault[diarize]"
+```
+
+#### With pipx
+
+```bash
+pipx install echo-vault
+pipx install "echo-vault[diarize]"    # with diarization
+```
+
+#### From source
 
 ```bash
 git clone https://github.com/yastcher/echo-vault
 cd echo-vault
-uv sync
+uv sync                # basic
+uv sync --group dev    # with diarization + dev tools
 ```
 
-### Arch Linux (AUR)
+#### Arch Linux (AUR)
 
 ```bash
 yay -S echo-vault
 ```
 
-### Nix
+#### Nix
 
 ```bash
 nix run github:yastcher/echo-vault
-```
-
-### System dependencies
-
-echo-vault requires `ffmpeg` and `parecord` at runtime:
-
-```bash
-# Arch / Manjaro
-sudo pacman -S ffmpeg pipewire-pulse
-
-# Ubuntu / Debian
-sudo apt install ffmpeg pulseaudio-utils
-
-# Fedora
-sudo dnf install ffmpeg pipewire-pulseaudio
 ```
 
 ## Quick start
@@ -164,11 +174,17 @@ cp .env.example .env
 
 | Variable | Default | Description |
 |---|---|---|
-| `MEETREC_DIARIZE` | `true` | Enable speaker diarization |
+| `MEETREC_DIARIZE` | `true` | Enable speaker diarization (requires `echo-vault[diarize]`) |
 | `MEETREC_HF_TOKEN` | *(empty)* | HuggingFace token for pyannote models |
 | `MEETREC_MAX_SPEAKERS` | *(auto)* | Maximum number of speakers |
 
-Diarization requires a HuggingFace token with access to pyannote models:
+Speaker diarization requires the `diarize` extra:
+
+```bash
+uv pip install echo-vault[diarize]
+```
+
+It also requires a HuggingFace token with access to pyannote models:
 
 1. Create account at [huggingface.co](https://huggingface.co)
 2. Accept license at [pyannote/speaker-diarization-3.1](https://huggingface.co/pyannote/speaker-diarization-3.1)

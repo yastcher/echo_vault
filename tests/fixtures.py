@@ -11,6 +11,21 @@ from click.testing import CliRunner
 from meetrec.recorder import Recorder
 from meetrec.settings import Settings
 
+
+def _pyannote_available() -> bool:
+    try:
+        import pyannote.audio  # noqa: F401
+
+        return True
+    except ImportError:
+        return False
+
+
+requires_pyannote = pytest.mark.skipif(
+    not _pyannote_available(),
+    reason="pyannote-audio not installed (install echo-vault[diarize])",
+)
+
 # --- pytest fixtures ---
 
 

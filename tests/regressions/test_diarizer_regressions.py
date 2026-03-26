@@ -14,9 +14,10 @@ from meetrec.diarizer import (
 )
 from meetrec.models import DiarizationSegment, Segment, Word
 from meetrec.settings import Settings
-from tests.fixtures import create_stereo_wav_segments
+from tests.fixtures import create_stereo_wav_segments, requires_pyannote
 
 
+@requires_pyannote
 def test_diarizer_passes_token_correctly(tmp_vault):
     """Pipeline.from_pretrained must receive 'token' kwarg, not 'use_auth_token'.
 
@@ -35,6 +36,7 @@ def test_diarizer_passes_token_correctly(tmp_vault):
     assert kwargs["token"] == "hf_test_123"
 
 
+@requires_pyannote
 def test_diarize_handles_diarize_output(tmp_vault):
     """Diarizer.diarize should handle DiarizeOutput (pyannote 4.x) wrapping Annotation.
 
@@ -67,6 +69,7 @@ def test_diarize_handles_diarize_output(tmp_vault):
     assert result[0].speaker == "SPEAKER_00"
 
 
+@requires_pyannote
 def test_diarize_cuda_init_fallback(tmp_vault, capsys):
     """Diarizer should fall back to CPU when CUDA is not available at init.
 
@@ -86,6 +89,7 @@ def test_diarize_cuda_init_fallback(tmp_vault, capsys):
     assert "CUDA not available for diarization" in captured.err
 
 
+@requires_pyannote
 def test_diarize_cuda_oom_fallback(tmp_vault, capsys):
     """Diarizer.diarize should fall back to CPU on CUDA OOM during inference.
 

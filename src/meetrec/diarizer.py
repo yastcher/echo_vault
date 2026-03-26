@@ -10,6 +10,16 @@ from meetrec.models import DiarizationSegment, Segment
 from meetrec.settings import Settings
 
 
+def diarization_available() -> bool:
+    """Check if pyannote-audio is installed."""
+    try:
+        import pyannote.audio  # noqa: F401
+
+        return True
+    except ImportError:
+        return False
+
+
 def _unwrap_diarization(result: Any) -> Any:
     """Extract Annotation from pyannote output.
 
