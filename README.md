@@ -333,6 +333,14 @@ uv run ty check         # type check
 uv run pytest           # test (coverage >= 85%)
 ```
 
+### Releasing
+
+```bash
+scripts/release.sh 0.9.0          # bump version in pyproject.toml + PKGBUILDs
+# commit, tag, push → CI publishes to PyPI
+scripts/aur-publish.sh 0.9.0      # update all 3 AUR packages
+```
+
 ## Roadmap
 
 - **Custom diarization model**: train a speaker embedding model on meeting audio to replace the generic pyannote pipeline

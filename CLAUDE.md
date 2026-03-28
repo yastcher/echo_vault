@@ -61,6 +61,7 @@ Do not duplicate ruff rules here — if ruff can check it, ruff owns it.
 - Semantic Versioning: MAJOR.MINOR.PATCH
 - After a release tag is pushed, all subsequent changes MUST go into a new version.
   Never amend a released version — bump the version first, then make changes.
+- CHANGELOG entries for released versions are immutable. Never edit past sections — create a new patch version (e.g. 0.8.1 → 0.8.2) for any additions or corrections.
 - Version is the single source of truth in `pyproject.toml`. All other files (PKGBUILDs) are updated via `scripts/release.sh <version>`.
 - Release flow: bump version → update CHANGELOG → commit → tag → push → CI publishes to PyPI → update AUR
 - AUR publishing is manual: clone AUR repo, copy PKGBUILD, generate `.SRCINFO`, compute sha256sum, push.
