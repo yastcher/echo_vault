@@ -56,6 +56,16 @@ Do not duplicate ruff rules here — if ruff can check it, ruff owns it.
   Write the test first, verify it fails, then apply the fix and verify the test passes.
   This prevents regressions and documents the exact failure scenario.
 
+## Versioning & releases
+
+- Semantic Versioning: MAJOR.MINOR.PATCH
+- After a release tag is pushed, all subsequent changes MUST go into a new version.
+  Never amend a released version — bump the version first, then make changes.
+- Version is the single source of truth in `pyproject.toml`. All other files (PKGBUILDs) are updated via `scripts/release.sh <version>`.
+- Release flow: bump version → update CHANGELOG → commit → tag → push → CI publishes to PyPI → update AUR
+- AUR publishing is manual: clone AUR repo, copy PKGBUILD, generate `.SRCINFO`, compute sha256sum, push.
+- PKGBUILD in this repo keeps `sha256sums=('SKIP')` — real checksum is set only in the AUR repo after the tarball is available.
+
 ## Git
 
 - Conventional commits (feat:, fix:, docs:, refactoring:)
