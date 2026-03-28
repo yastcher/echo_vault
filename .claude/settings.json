@@ -13,7 +13,6 @@
       "WebFetch(domain:youtrack.jetbrains.com)",
       "WebFetch(domain:mypy.readthedocs.io)",
       "WebFetch(domain:pypi.org)",
-      "Skill(humanizer)",
       "Bash(ls *)",
       "Bash(uv sync*)",
       "Bash(uv run jupyter*)",
