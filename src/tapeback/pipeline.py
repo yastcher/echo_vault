@@ -2,20 +2,27 @@
 
 import gc
 import shutil
+import tempfile
 from collections.abc import Callable
 from pathlib import Path
 
 from tapeback.audio import convert_to_mono16k, get_channel_count, merge_channels, split_channels_16k
 from tapeback.diarizer import (
+    Diarizer,
+    assign_speakers,
+    diarization_available,
     filter_silent_segments,
+    identify_user_speaker,
     load_stereo_channels,
     merge_channel_segments,
+    merge_similar_speakers,
     split_on_silence,
 )
 from tapeback.formatter import format_markdown
 from tapeback.models import Segment
 from tapeback.recorder import Recorder
 from tapeback.settings import Settings
+from tapeback.summarizer import maybe_summarize
 from tapeback.vault import save_audio_to_vault, save_markdown_to_vault
 
 StatusCallback = Callable[[str], None]
@@ -83,8 +90,6 @@ def process_file(
     on_status: StatusCallback = _noop_status,
 ) -> Path:
     """Process an existing audio file. Returns path to saved markdown."""
-    import tempfile
-
     if name is None:
         name = audio_path.stem
 
@@ -141,7 +146,7 @@ def process_stereo_file(
     on_status: StatusCallback = _noop_status,
 ) -> tuple[list[Segment], dict[str, str | float]]:
     """Process a stereo WAV through the dual-channel pipeline."""
-    from tapeback.transcriber import Transcriber
+    from tapeback.transcriber import Transcriber  # noqa: PLC0415 — 10s import, must stay lazy
 
     mic_raw, monitor_raw, raw_sr = load_stereo_channels(stereo_path)
 
@@ -168,8 +173,6 @@ def process_stereo_file(
 
     diarized = False
     if diarize and settings.diarize and settings.hf_token:
-        from tapeback.diarizer import diarization_available
-
         if not diarization_available():
             on_status(
                 "Warning: pyannote-audio not installed, skipping diarization. "
@@ -177,8 +180,6 @@ def process_stereo_file(
             )
         else:
             on_status("Diarizing speakers...")
-            from tapeback.diarizer import Diarizer, assign_speakers, merge_similar_speakers
-
             diarizer = Diarizer(settings)
             diarization_segments = diarizer.diarize(monitor_16k)
             diarization_segments = merge_similar_speakers(diarization_segments, monitor_raw, raw_sr)
@@ -210,7 +211,7 @@ def process_mono_file(
     on_status: StatusCallback = _noop_status,
 ) -> tuple[list[Segment], dict[str, str | float]]:
     """Process a mono/non-stereo audio file through the single-channel pipeline."""
-    from tapeback.transcriber import Transcriber
+    from tapeback.transcriber import Transcriber  # noqa: PLC0415 — 10s import, must stay lazy
 
     on_status("Converting audio...")
     mono_16k_path = convert_to_mono16k(audio_path, output_dir)
@@ -239,7 +240,7 @@ def free_gpu_memory() -> None:
     """Free GPU memory so diarizer can use CUDA."""
     gc.collect()
     try:
-        import torch
+        import torch  # noqa: PLC0415 — optional dependency, guarded by try/except
 
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
@@ -267,8 +268,6 @@ def _maybe_diarize_segments(
         )
         return segments
 
-    from tapeback.diarizer import diarization_available
-
     if not diarization_available():
         on_status(
             "Warning: pyannote-audio not installed, skipping diarization. "
@@ -277,8 +276,6 @@ def _maybe_diarize_segments(
         return segments
 
     on_status("Diarizing speakers...")
-    from tapeback.diarizer import Diarizer, assign_speakers, identify_user_speaker
-
     diarizer = Diarizer(settings)
     diarization_segments = diarizer.diarize(mono_16k_path)
 
@@ -301,7 +298,5 @@ def _get_stereo_source(audio_path: Path) -> Path | None:
 
 def _maybe_summarize(md_path: Path, settings: Settings, on_status: StatusCallback) -> None:
     """Run summarization if available."""
-    from tapeback.summarizer import maybe_summarize
-
     on_status("Summarizing...")
     maybe_summarize(md_path, settings)

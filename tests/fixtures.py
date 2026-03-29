@@ -14,7 +14,7 @@ from tapeback.settings import Settings
 
 def _pyannote_available() -> bool:
     try:
-        import pyannote.audio  # noqa: F401
+        import pyannote.audio  # noqa: F401, PLC0415
 
         return True
     except ImportError:
@@ -83,6 +83,16 @@ def e2e_settings(tmp_path):
     return Settings(
         vault_path=vault,
         hf_token=os.environ.get("TAPEBACK_HF_TOKEN", os.environ.get("HF_TOKEN", "")),
+    )
+
+
+@pytest.fixture
+def summarize_settings(tmp_vault):
+    """Settings pre-configured for summarizer tests."""
+    return Settings(
+        vault_path=tmp_vault,
+        llm_provider="anthropic",
+        llm_api_key="sk-ant-test-key",
     )
 
 

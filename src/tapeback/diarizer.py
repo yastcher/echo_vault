@@ -71,18 +71,20 @@ class Diarizer:
                     file=sys.stderr,
                 )
 
+    def _run_pipeline(self, audio_path: Path) -> Any:
+        """Run pyannote pipeline with optional max_speakers."""
+        if self._settings.max_speakers is not None:
+            return self._pipeline(audio_path, max_speakers=self._settings.max_speakers)
+        return self._pipeline(audio_path)
+
     def diarize(self, audio_path: Path) -> list[DiarizationSegment]:
         """Run diarization on audio file.
 
         Returns list of DiarizationSegment sorted by start time.
         Falls back to CPU if CUDA runs out of memory during inference.
         """
-        kwargs: dict[str, int] = {}
-        if self._settings.max_speakers is not None:
-            kwargs["max_speakers"] = self._settings.max_speakers
-
         try:
-            diarization = self._pipeline(audio_path, **kwargs)  # type: ignore[arg-type]
+            diarization = self._run_pipeline(audio_path)
         except RuntimeError as exc:
             if "CUDA" not in str(exc) and "out of memory" not in str(exc):
                 raise
@@ -91,7 +93,7 @@ class Diarizer:
                 file=sys.stderr,
             )
             self._fallback_to_cpu()
-            diarization = self._pipeline(audio_path, **kwargs)  # type: ignore[arg-type]
+            diarization = self._run_pipeline(audio_path)
 
         # pyannote 4.x returns DiarizeOutput wrapping Annotation
         annotation = _unwrap_diarization(diarization)

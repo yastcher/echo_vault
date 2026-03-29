@@ -81,11 +81,11 @@ ignore = [
 fixable = ["ALL"]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**/*.py" = ["S101", "S105", "S106", "PLC0415"]  # assert, fake tokens, local imports in tests
+"tests/**/*.py" = ["S101", "S105", "S106"]  # assert, fake tokens in tests
 "src/tapeback/cli.py" = ["PLC0415"]         # lazy imports for heavy ML deps
-"src/tapeback/pipeline.py" = ["PLC0415", "PLR0913"]  # lazy imports for heavy ML deps, pipeline functions take many params
+"src/tapeback/pipeline.py" = ["PLR0913"]  # pipeline functions take many params
 "src/tapeback/diarizer.py" = ["PLC0415", "PLR0912", "PLR0915"]  # lazy ML imports, complex audio algorithms
-"src/tapeback/summarizer.py" = ["PLC0415", "S101"]  # lazy imports for SDKs, assert for type narrowing
+"src/tapeback/summarizer.py" = ["PLC0415"]  # lazy imports for optional LLM SDKs
 
 [tool.ruff.lint.isort]
 known-local-folder = ["tapeback", "tests"]
@@ -114,28 +114,3 @@ python-version = "3.13"
 # Project root needed for `from tests.fixtures import ...`
 # src/ needed for `from tapeback import ...`
 extra-paths = [".", "src"]
-
-# pydantic-settings fills required fields from env vars at runtime;
-# pyannote Pipeline stubs have incorrect __call__ signature
-[[tool.ty.overrides]]
-include = ["src/tapeback/settings.py"]
-[tool.ty.overrides.rules]
-missing-argument = "ignore"
-
-[[tool.ty.overrides]]
-include = ["src/tapeback/diarizer.py"]
-[tool.ty.overrides.rules]
-invalid-argument-type = "ignore"
-
-[[tool.ty.overrides]]
-include = ["src/tapeback/cli.py"]
-[tool.ty.overrides.rules]
-# click.Choice validates provider at runtime before assignment
-invalid-assignment = "ignore"
-
-[[tool.ty.overrides]]
-include = ["tests/"]
-[tool.ty.overrides.rules]
-# Tests use monkey-patched Exception.status_code; pydantic-settings fills vault_path from env
-unresolved-attribute = "ignore"
-missing-argument = "ignore"

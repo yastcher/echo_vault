@@ -162,10 +162,13 @@ def summarize(file: str, provider: str | None, model: str | None) -> None:
     """
     settings = get_settings()
 
+    overrides: dict[str, str] = {}
     if provider:
-        settings.llm_provider = provider  # type: ignore[assignment]  # validated by click.Choice
+        overrides["llm_provider"] = provider
     if model:
-        settings.llm_model = model
+        overrides["llm_model"] = model
+    if overrides:
+        settings = settings.model_copy(update=overrides)
 
     from tapeback.summarizer import (
         extract_transcript_from_markdown,

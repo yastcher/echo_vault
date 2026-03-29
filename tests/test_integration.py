@@ -265,7 +265,7 @@ def test_diarization_unavailable_warning(tmp_vault):
     segments = [Segment(start=0.0, end=5.0, text="Hello.")]
     messages: list[str] = []
 
-    with patch("tapeback.diarizer.diarization_available", return_value=False):
+    with patch("tapeback.pipeline.diarization_available", return_value=False):
         result = _maybe_diarize_segments(
             segments,
             settings,

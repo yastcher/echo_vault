@@ -15,6 +15,16 @@ DEFAULT_MODELS: dict[str, str] = {
     "qwen": "qwen-turbo",
 }
 
+type LLMProvider = Literal[
+    "anthropic",
+    "openai",
+    "groq",
+    "gemini",
+    "openrouter",
+    "deepseek",
+    "qwen",
+]
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -57,15 +67,7 @@ class Settings(BaseSettings):
 
     # Summarization
     summarize: bool = True
-    llm_provider: Literal[
-        "anthropic",
-        "openai",
-        "groq",
-        "gemini",
-        "openrouter",
-        "deepseek",
-        "qwen",
-    ] = "anthropic"
+    llm_provider: LLMProvider = "anthropic"
     llm_api_key: str = ""
     llm_model: str = ""
 

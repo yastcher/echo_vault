@@ -23,7 +23,7 @@ def test_settings_vault_path_default(monkeypatch, tmp_path):
     # Use empty dir so no .env is found
     monkeypatch.chdir(tmp_path)
 
-    s = Settings(_env_file=str(tmp_path / "nonexistent.env"))  # type: ignore[call-arg]
+    s = Settings(_env_file=str(tmp_path / "nonexistent.env"))  # type: ignore
     assert s.vault_path == Path.home() / "tapeback"
 
 

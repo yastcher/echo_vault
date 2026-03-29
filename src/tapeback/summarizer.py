@@ -217,7 +217,8 @@ def _call_llm_once(
             messages=[{"role": "user", "content": user_message}],
         )
         block = ant_response.content[0]
-        assert hasattr(block, "text")  # Always TextBlock for non-streaming
+        if not hasattr(block, "text"):
+            raise RuntimeError(f"Unexpected anthropic response block type: {type(block).__name__}")
         return str(block.text)
 
     # All other providers use OpenAI-compatible Chat Completions API

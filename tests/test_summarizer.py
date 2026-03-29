@@ -19,6 +19,15 @@ from tapeback.summarizer import (
     summarize,
 )
 
+
+class _HttpError(Exception):
+    """Exception with status_code attribute, mimicking SDK exceptions (anthropic, openai)."""
+
+    def __init__(self, message: str, status_code: int) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+
+
 SAMPLE_MD = """\
 ---
 date: 2026-03-20
@@ -72,15 +81,6 @@ TRIVIAL_LLM_RESPONSE = json.dumps(
         "is_trivial": True,
     }
 )
-
-
-@pytest.fixture
-def summarize_settings(tmp_vault):
-    return Settings(
-        vault_path=tmp_vault,
-        llm_provider="anthropic",
-        llm_api_key="sk-ant-test-key",
-    )
 
 
 # --- format_summary_markdown ---
@@ -246,8 +246,7 @@ def test_summarize_raises_on_persistent_invalid_json(summarize_settings):
 
 def test_call_llm_retries_on_429(summarize_settings):
     """429 error → retry with backoff, succeed on second attempt."""
-    rate_limit_exc = Exception("rate limited")
-    rate_limit_exc.status_code = 429
+    rate_limit_exc = _HttpError("rate limited", 429)
 
     with (
         patch(
@@ -266,8 +265,7 @@ def test_call_llm_retries_on_429(summarize_settings):
 
 def test_call_llm_gives_up_after_max_retries(summarize_settings):
     """Persistent 429 → raises after _MAX_RETRIES attempts."""
-    rate_limit_exc = Exception("rate limited")
-    rate_limit_exc.status_code = 429
+    rate_limit_exc = _HttpError("rate limited", 429)
 
     with (
         patch(
@@ -283,8 +281,7 @@ def test_call_llm_gives_up_after_max_retries(summarize_settings):
 
 def test_call_llm_no_retry_on_non_429(summarize_settings):
     """Non-retryable error (e.g. 401) → raised immediately, no retry."""
-    auth_exc = Exception("unauthorized")
-    auth_exc.status_code = 401
+    auth_exc = _HttpError("unauthorized", 401)
 
     with (
         patch(
@@ -417,8 +414,7 @@ def test_fallback_chain_tries_next_provider(summarize_settings):
         ("groq", "groq-key", "groq-model"),
     ]
 
-    primary_exc = Exception("server error")
-    primary_exc.status_code = 500
+    primary_exc = _HttpError("server error", 500)
 
     with (
         patch("tapeback.summarizer._build_provider_chain", return_value=chain),
@@ -442,10 +438,8 @@ def test_fallback_all_providers_fail(summarize_settings):
         ("groq", "groq-key", "groq-model"),
     ]
 
-    exc1 = Exception("anthropic failed")
-    exc1.status_code = 500
-    exc2 = Exception("groq failed")
-    exc2.status_code = 500
+    exc1 = _HttpError("anthropic failed", 500)
+    exc2 = _HttpError("groq failed", 500)
 
     with (
         patch("tapeback.summarizer._build_provider_chain", return_value=chain),
