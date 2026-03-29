@@ -35,6 +35,7 @@ speaker diarization and LLM summaries:
 | Extra | What it adds | Size      |
 |---|---|-----------|
 | *(none)* | Recording + transcription | ~320 MB |
+| `[tray]` | System tray icon (no terminal needed) | +1 MB |
 | `[llm]` | LLM summarization (Anthropic, OpenAI, Gemini, etc.) | +50 MB    |
 | `[diarize]` | Speaker diarization (pyannote + PyTorch) | +2 GB     |
 | `[llm,diarize]` | Everything | +2 GB     |
@@ -104,6 +105,17 @@ mkdir -p ~/.config/tapeback
 echo 'TAPEBACK_VAULT_PATH=~/Documents/obsidian/vault' > ~/.config/tapeback/.env
 ```
 
+### System tray
+
+Run without a terminal — right-click the icon to start/stop recording:
+
+```bash
+uv pip install tapeback[tray]
+tapeback tray
+```
+
+The icon shows: **gray** = idle, **red** = recording, **orange** = processing.
+
 ### More examples
 
 ```bash
@@ -154,7 +166,6 @@ Brief overview of the meeting.
 
 ## Roadmap
 
-- **System tray icon**: start/stop recording from the tray, no terminal needed
 - **Speaker profiles**: learn and remember recurring speakers across meetings
 - **Real-time transcription**: live streaming with partial results
 - **Multi-language meetings**: detect and handle language switches mid-meeting

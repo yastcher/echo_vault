@@ -226,3 +226,24 @@ def status() -> None:
         )
         if result.returncode == 0:
             click.echo(result.stdout)
+
+
+@cli.command()
+def tray() -> None:
+    """Run tapeback as a system tray icon.
+
+    Provides a graphical interface for start/stop recording
+    without needing a terminal. Right-click the icon for the menu.
+
+    \b
+    Requires the tray extra:
+      uv pip install tapeback[tray]
+    """
+    try:
+        from tapeback.tray import run_tray
+    except ImportError:
+        raise click.ClickException(
+            "System tray requires pystray and Pillow. Install with: uv pip install tapeback[tray]"
+        ) from None
+
+    run_tray()

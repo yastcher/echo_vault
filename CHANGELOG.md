@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.4] — 2026-03-30
+
+### Added
+- System tray icon (`tapeback tray`): start/stop recording from the tray, no terminal needed
+- `[tray]` optional extra: `uv pip install tapeback[tray]` (pystray + Pillow)
+
+### Changed
+- Extracted `LLMProvider` type alias from inline Literal in settings.py
+- Replaced monkey-patched `Exception.status_code` in tests with proper `_HttpError` class
+- Removed all `[[tool.ty.overrides]]` sections from pyproject.toml — fixed root causes instead
+- Moved fixtures to `tests/fixtures.py`, reduced local imports in `pipeline.py`
+- Replaced `assert` in summarizer with explicit `RuntimeError` check
+- Diarizer: replaced `**kwargs` dispatch with explicit `_run_pipeline()` method
+
+## [0.8.3] — 2026-03-29
+
+### Fix
+- install from AUR now worked
+
 ## [0.8.2] — 2026-03-29
 
 ### Added

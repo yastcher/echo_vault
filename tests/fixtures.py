@@ -26,6 +26,21 @@ requires_pyannote = pytest.mark.skipif(
     reason="pyannote-audio not installed (install tapeback[diarize])",
 )
 
+
+def _pystray_available() -> bool:
+    try:
+        import pystray  # noqa: F401, PLC0415
+
+        return True
+    except ImportError:
+        return False
+
+
+requires_pystray = pytest.mark.skipif(
+    not _pystray_available(),
+    reason="pystray not installed (install tapeback[tray])",
+)
+
 # --- pytest fixtures ---
 
 
@@ -94,6 +109,19 @@ def summarize_settings(tmp_vault):
         llm_provider="anthropic",
         llm_api_key="sk-ant-test-key",
     )
+
+
+@pytest.fixture
+def tray_app(settings):
+    """TrayApp with mocked pystray icon and recorder for testing state transitions."""
+    from tapeback.tray import TrayApp  # noqa: PLC0415 — optional dep
+
+    app = TrayApp(settings)
+    app._icon = MagicMock()
+    app._recorder = MagicMock()
+    app._recorder.is_recording.return_value = False
+    app._recorder.get_session_info.return_value = None
+    return app
 
 
 @pytest.fixture
