@@ -1,12 +1,16 @@
 """System tray tests — state transitions, icon generation, menu callbacks."""
 
+import contextlib
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from tapeback.tray import TrayApp, TrayState, _create_icon, _icon_for_state
 from tests.fixtures import requires_pystray
 
 pytestmark = requires_pystray
+
+with contextlib.suppress(Exception):
+    # Fails on headless CI (no X display); all tests skipped via requires_pystray
+    from tapeback.tray import TrayApp, TrayState, _create_icon, _icon_for_state
 
 
 # --- Icon generation ---

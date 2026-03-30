@@ -32,7 +32,8 @@ def _pystray_available() -> bool:
         import pystray  # noqa: F401, PLC0415
 
         return True
-    except ImportError:
+    except Exception:
+        # ImportError when not installed; Xlib.error.DisplayNameError on headless CI
         return False
 
 
