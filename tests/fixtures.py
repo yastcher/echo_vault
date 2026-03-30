@@ -207,6 +207,118 @@ def create_stereo_wav_segments(path, sample_rate, segments_spec):
         wf.writeframes(stereo.tobytes())
 
 
+# --- Test data constants ---
+
+
+SAMPLE_MD = """\
+---
+date: 2026-03-20
+time: "14:30"
+duration: "00:10:00"
+language: en
+---
+
+# Meeting 2026-03-20 14:30
+
+[00:00:01] **You:** Hello there.
+[00:00:05] **Speaker 1:** Hi, let's discuss the plan.
+"""
+
+SAMPLE_MD_WITH_SUMMARY = """\
+---
+date: 2026-03-20
+time: "14:30"
+duration: "00:10:00"
+language: en
+---
+
+## Summary
+
+Old summary here.
+
+---
+
+# Meeting 2026-03-20 14:30
+
+[00:00:01] **You:** Hello there.
+"""
+
+SAMPLE_TRANSCRIPT_MD = """\
+---
+date: 2026-03-20
+time: "14:30"
+duration: "00:10:00"
+language: en
+tags:
+  - meeting
+  - transcript
+audio: "[[attachments/audio/2026-03-20_14-30-00.wav]]"
+---
+
+# Meeting 2026-03-20 14:30
+
+[00:00:01] **You:** Hello there.
+[00:00:05] **Speaker 1:** Hi, let's discuss the plan.
+"""
+
+VALID_LLM_RESPONSE = json.dumps(
+    {
+        "brief": "Discussed the project plan and assigned tasks.",
+        "action_items": [
+            {"assignee": "You", "action": "Send the report", "deadline": "Friday"},
+            {"assignee": "Speaker 1", "action": "Review the code", "deadline": None},
+        ],
+        "key_decisions": ["Use PostgreSQL instead of MongoDB"],
+        "is_trivial": False,
+    }
+)
+
+VALID_LLM_RESPONSE_MINIMAL = json.dumps(
+    {
+        "brief": "Test summary.",
+        "action_items": [],
+        "key_decisions": [],
+        "is_trivial": False,
+    }
+)
+
+
+class HttpError(Exception):
+    """Exception with status_code attribute, mimicking SDK exceptions (anthropic, openai)."""
+
+    def __init__(self, message: str, status_code: int) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+
+
+# --- Test helpers ---
+
+
+def clear_all_provider_env_vars(monkeypatch) -> None:
+    """Remove all provider-specific API key env vars."""
+    from tapeback.summarizer import _PROVIDER_ENV_VARS  # noqa: PLC0415
+
+    for env_var in _PROVIDER_ENV_VARS.values():
+        monkeypatch.delenv(env_var, raising=False)
+
+
+def mock_anthropic_response(text: str) -> MagicMock:
+    """Create a mock anthropic Messages.create response."""
+    response = MagicMock()
+    response.content = [MagicMock(text=text)]
+    return response
+
+
+def voice_signal(duration: float, sr: int, fundamental: float) -> np.ndarray:
+    """Generate a synthetic voice signal with harmonics."""
+    t = np.linspace(0, duration, int(duration * sr), dtype=np.float32)
+    return (
+        np.sin(2 * np.pi * fundamental * t)
+        + 0.5 * np.sin(2 * np.pi * fundamental * 2 * t)
+        + 0.25 * np.sin(2 * np.pi * fundamental * 3 * t)
+    ) * 10000
+
+
 # --- Session file helpers ---
 
 

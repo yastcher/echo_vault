@@ -18,7 +18,12 @@ from tapeback.diarizer import (
 )
 from tapeback.models import DiarizationSegment, Segment, Word
 from tapeback.settings import Settings
-from tests.fixtures import create_stereo_wav, create_stereo_wav_segments, requires_pyannote
+from tests.fixtures import (
+    create_stereo_wav,
+    create_stereo_wav_segments,
+    requires_pyannote,
+    voice_signal,
+)
 
 # --- Diarizer init / diarize ---
 
@@ -388,20 +393,10 @@ def test_split_on_silence_monitor_relative(stereo_wav):
 # --- merge_similar_speakers ---
 
 
-def _voice_signal(duration: float, sr: int, fundamental: float) -> np.ndarray:
-    """Generate a synthetic voice signal with harmonics."""
-    t = np.linspace(0, duration, int(duration * sr), dtype=np.float32)
-    return (
-        np.sin(2 * np.pi * fundamental * t)
-        + 0.5 * np.sin(2 * np.pi * fundamental * 2 * t)
-        + 0.25 * np.sin(2 * np.pi * fundamental * 3 * t)
-    ) * 10000
-
-
 def test_merge_similar_speakers_same_voice():
     """Two segments from the same voice should be merged into one speaker."""
     sr = 16000
-    audio = _voice_signal(5.0, sr, fundamental=200.0)
+    audio = voice_signal(5.0, sr, fundamental=200.0)
 
     segments = [
         DiarizationSegment(speaker="SPEAKER_00", start=0.0, end=2.0),
@@ -420,10 +415,10 @@ def test_merge_similar_speakers_different_voices():
     audio = np.zeros(n_samples, dtype=np.float32)
 
     # Speaker A: 200 Hz + harmonics (0-2 s)
-    audio[: int(2.0 * sr)] = _voice_signal(2.0, sr, fundamental=200.0)
+    audio[: int(2.0 * sr)] = voice_signal(2.0, sr, fundamental=200.0)
     # Speaker B: 800 Hz + harmonics (2.5-5 s)
     start2 = int(2.5 * sr)
-    sig_b = _voice_signal(2.5, sr, fundamental=800.0)
+    sig_b = voice_signal(2.5, sr, fundamental=800.0)
     audio[start2 : start2 + len(sig_b)] = sig_b
 
     segments = [

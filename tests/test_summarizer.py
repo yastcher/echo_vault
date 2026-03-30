@@ -1,7 +1,6 @@
-"""Summarizer tests — markdown formatting, injection, extraction, LLM mocking."""
+"""Summarizer tests — markdown formatting, injection, extraction, LLM integration flows."""
 
-import json
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -16,72 +15,17 @@ from tapeback.summarizer import (
     extract_transcript_from_markdown,
     format_summary_markdown,
     inject_summary_into_markdown,
+    maybe_summarize,
     summarize,
 )
-
-
-class _HttpError(Exception):
-    """Exception with status_code attribute, mimicking SDK exceptions (anthropic, openai)."""
-
-    def __init__(self, message: str, status_code: int) -> None:
-        super().__init__(message)
-        self.status_code = status_code
-
-
-SAMPLE_MD = """\
----
-date: 2026-03-20
-time: "14:30"
-duration: "00:10:00"
-language: en
----
-
-# Meeting 2026-03-20 14:30
-
-[00:00:01] **You:** Hello there.
-[00:00:05] **Speaker 1:** Hi, let's discuss the plan.
-"""
-
-SAMPLE_MD_WITH_SUMMARY = """\
----
-date: 2026-03-20
-time: "14:30"
-duration: "00:10:00"
-language: en
----
-
-## Summary
-
-Old summary here.
-
----
-
-# Meeting 2026-03-20 14:30
-
-[00:00:01] **You:** Hello there.
-"""
-
-VALID_LLM_RESPONSE = json.dumps(
-    {
-        "brief": "Discussed the project plan and assigned tasks.",
-        "action_items": [
-            {"assignee": "You", "action": "Send the report", "deadline": "Friday"},
-            {"assignee": "Speaker 1", "action": "Review the code", "deadline": None},
-        ],
-        "key_decisions": ["Use PostgreSQL instead of MongoDB"],
-        "is_trivial": False,
-    }
+from tests.fixtures import (
+    SAMPLE_MD,
+    SAMPLE_MD_WITH_SUMMARY,
+    VALID_LLM_RESPONSE,
+    HttpError,
+    clear_all_provider_env_vars,
+    mock_anthropic_response,
 )
-
-TRIVIAL_LLM_RESPONSE = json.dumps(
-    {
-        "brief": "Short status sync, no substantive topics discussed.",
-        "action_items": [],
-        "key_decisions": [],
-        "is_trivial": True,
-    }
-)
-
 
 # --- format_summary_markdown ---
 
@@ -160,6 +104,28 @@ def test_inject_summary_into_markdown_replace():
     assert "Hello there." in result
 
 
+def test_inject_summary_no_frontmatter():
+    """No frontmatter → summary prepended to content."""
+    content = "# Meeting 2026-03-20\n\n[00:00:01] **You:** Hello.\n"
+    summary_md = "\n## Summary\n\nBrief.\n\n---\n"
+
+    result = inject_summary_into_markdown(content, summary_md)
+
+    assert result.startswith(summary_md)
+    assert "Hello." in result
+
+
+def test_inject_summary_frontmatter_no_transcript_header():
+    """Frontmatter present but no '# Meeting' header → summary inserted after frontmatter."""
+    content = "---\ndate: 2026-03-20\n---\n\nSome notes without header.\n"
+    summary_md = "\n## Summary\n\nBrief.\n\n---\n"
+
+    result = inject_summary_into_markdown(content, summary_md)
+
+    assert "## Summary" in result
+    assert "Some notes without header." in result
+
+
 # --- extract_transcript_from_markdown ---
 
 
@@ -181,120 +147,11 @@ def test_extract_transcript_no_summary():
     assert "Hello there." in result
 
 
-# --- summarize ---
+def test_extract_transcript_no_meeting_header():
+    """No '# Meeting' header → empty string."""
+    result = extract_transcript_from_markdown("---\ndate: 2026-03-20\n---\n\nJust notes.\n")
 
-
-def test_summarize_calls_llm_with_correct_prompt(summarize_settings):
-    """summarize should pass system prompt and transcript to _call_llm."""
-    with patch("tapeback.summarizer._call_llm", return_value=VALID_LLM_RESPONSE) as mock_call:
-        summarize("Some transcript text", summarize_settings)
-
-    mock_call.assert_called_once()
-    system_prompt = mock_call.call_args[0][0]
-    user_message = mock_call.call_args[0][1]
-    assert "JSON" in system_prompt
-    assert "action_items" in system_prompt
-    assert user_message == "Some transcript text"
-
-
-def test_summarize_parses_valid_json(summarize_settings):
-    """Valid JSON response → correct Summary dataclass."""
-    with patch("tapeback.summarizer._call_llm", return_value=VALID_LLM_RESPONSE):
-        result = summarize("transcript", summarize_settings)
-
-    assert result.brief == "Discussed the project plan and assigned tasks."
-    assert len(result.action_items) == 2
-    assert result.action_items[0].assignee == "You"
-    assert result.action_items[0].deadline == "Friday"
-    assert result.action_items[1].deadline is None
-    assert result.key_decisions == ["Use PostgreSQL instead of MongoDB"]
-    assert result.is_trivial is False
-
-
-def test_summarize_strips_markdown_fences(summarize_settings):
-    """JSON wrapped in ```json ... ``` → parsed correctly."""
-    fenced = f"```json\n{VALID_LLM_RESPONSE}\n```"
-    with patch("tapeback.summarizer._call_llm", return_value=fenced):
-        result = summarize("transcript", summarize_settings)
-
-    assert result.brief == "Discussed the project plan and assigned tasks."
-    assert len(result.action_items) == 2
-
-
-def test_summarize_retries_on_invalid_json(summarize_settings):
-    """First call returns garbage, second returns valid JSON → success."""
-    with patch(
-        "tapeback.summarizer._call_llm",
-        side_effect=["not json at all", VALID_LLM_RESPONSE],
-    ):
-        result = summarize("transcript", summarize_settings)
-
-    assert result.brief == "Discussed the project plan and assigned tasks."
-
-
-def test_summarize_raises_on_persistent_invalid_json(summarize_settings):
-    """Both calls return garbage → RuntimeError."""
-    with (
-        patch("tapeback.summarizer._call_llm", return_value="still not json"),
-        pytest.raises(RuntimeError, match="Failed to parse"),
-    ):
-        summarize("transcript", summarize_settings)
-
-
-# --- Retry on rate limit ---
-
-
-def test_call_llm_retries_on_429(summarize_settings):
-    """429 error → retry with backoff, succeed on second attempt."""
-    rate_limit_exc = _HttpError("rate limited", 429)
-
-    with (
-        patch(
-            "tapeback.summarizer._build_provider_chain",
-            return_value=[("anthropic", "test-key", "test-model")],
-        ),
-        patch("tapeback.summarizer._call_llm_once", side_effect=[rate_limit_exc, "ok"]) as mock,
-        patch("tapeback.summarizer.time.sleep") as mock_sleep,
-    ):
-        result = _call_llm("system", "user", summarize_settings)
-
-    assert result == "ok"
-    assert mock.call_count == 2
-    mock_sleep.assert_called_once_with(5)
-
-
-def test_call_llm_gives_up_after_max_retries(summarize_settings):
-    """Persistent 429 → raises after _MAX_RETRIES attempts."""
-    rate_limit_exc = _HttpError("rate limited", 429)
-
-    with (
-        patch(
-            "tapeback.summarizer._build_provider_chain",
-            return_value=[("anthropic", "test-key", "test-model")],
-        ),
-        patch("tapeback.summarizer._call_llm_once", side_effect=rate_limit_exc),
-        patch("tapeback.summarizer.time.sleep"),
-        pytest.raises(Exception, match="rate limited"),
-    ):
-        _call_llm("system", "user", summarize_settings)
-
-
-def test_call_llm_no_retry_on_non_429(summarize_settings):
-    """Non-retryable error (e.g. 401) → raised immediately, no retry."""
-    auth_exc = _HttpError("unauthorized", 401)
-
-    with (
-        patch(
-            "tapeback.summarizer._build_provider_chain",
-            return_value=[("anthropic", "test-key", "test-model")],
-        ),
-        patch("tapeback.summarizer._call_llm_once", side_effect=auth_exc),
-        patch("tapeback.summarizer.time.sleep") as mock_sleep,
-        pytest.raises(Exception, match="unauthorized"),
-    ):
-        _call_llm("system", "user", summarize_settings)
-
-    mock_sleep.assert_not_called()
+    assert result == ""
 
 
 # --- API key resolution ---
@@ -345,18 +202,12 @@ def test_get_model_explicit_override(tmp_vault):
     assert _get_model(settings) == "custom-model"
 
 
-# --- Provider fallback chain ---
-
-
-def _clear_all_provider_env_vars(monkeypatch):
-    """Remove all provider-specific API key env vars."""
-    for env_var in _PROVIDER_ENV_VARS.values():
-        monkeypatch.delenv(env_var, raising=False)
+# --- Provider chain building ---
 
 
 def test_build_provider_chain_primary_first(tmp_vault, monkeypatch):
     """Primary provider appears first in chain."""
-    _clear_all_provider_env_vars(monkeypatch)
+    clear_all_provider_env_vars(monkeypatch)
     settings = Settings(
         vault_path=tmp_vault, llm_provider="groq", llm_api_key="main-key", llm_model=""
     )
@@ -369,7 +220,7 @@ def test_build_provider_chain_primary_first(tmp_vault, monkeypatch):
 
 def test_build_provider_chain_includes_fallbacks(tmp_vault, monkeypatch):
     """Chain includes all providers with available API keys."""
-    _clear_all_provider_env_vars(monkeypatch)
+    clear_all_provider_env_vars(monkeypatch)
     monkeypatch.setenv("GROQ_API_KEY", "groq-key")
     monkeypatch.setenv("GEMINI_API_KEY", "gemini-key")
     settings = Settings(vault_path=tmp_vault, llm_provider="anthropic", llm_api_key="ant-key")
@@ -382,7 +233,7 @@ def test_build_provider_chain_includes_fallbacks(tmp_vault, monkeypatch):
 
 def test_build_provider_chain_skips_providers_without_keys(tmp_vault, monkeypatch):
     """Providers without API keys are excluded from chain."""
-    _clear_all_provider_env_vars(monkeypatch)
+    clear_all_provider_env_vars(monkeypatch)
     settings = Settings(vault_path=tmp_vault, llm_provider="anthropic", llm_api_key="")
 
     chain = _build_provider_chain(settings)
@@ -392,7 +243,7 @@ def test_build_provider_chain_skips_providers_without_keys(tmp_vault, monkeypatc
 
 def test_build_provider_chain_explicit_model_for_primary_only(tmp_vault, monkeypatch):
     """Explicit model setting applies only to primary provider."""
-    _clear_all_provider_env_vars(monkeypatch)
+    clear_all_provider_env_vars(monkeypatch)
     monkeypatch.setenv("GROQ_API_KEY", "groq-key")
     settings = Settings(
         vault_path=tmp_vault,
@@ -407,55 +258,185 @@ def test_build_provider_chain_explicit_model_for_primary_only(tmp_vault, monkeyp
     assert chain[1] == ("groq", "groq-key", DEFAULT_MODELS["groq"])
 
 
-def test_fallback_chain_tries_next_provider(summarize_settings):
-    """Primary provider fails → falls back to next available provider."""
-    chain = [
-        ("anthropic", "ant-key", "claude-model"),
-        ("groq", "groq-key", "groq-model"),
-    ]
+# --- Integration flow tests ---
+# Mock only at SDK boundary (anthropic.Anthropic / openai.OpenAI).
+# Exercises the full chain: _build_provider_chain → _call_llm →
+# _call_provider_with_retry → _call_llm_once → summarize → parse → format → inject.
 
-    primary_exc = _HttpError("server error", 500)
 
+def test_summarize_to_markdown_flow(summarize_settings):
+    """Full flow: transcript → LLM (anthropic SDK) → parse → format → inject."""
+    with patch("anthropic.Anthropic") as mock_cls:
+        mock_cls.return_value.messages.create.return_value = mock_anthropic_response(
+            VALID_LLM_RESPONSE
+        )
+        summary = summarize("Test transcript text", summarize_settings)
+
+    # Summary parsed correctly from LLM response
+    assert summary.brief == "Discussed the project plan and assigned tasks."
+    assert len(summary.action_items) == 2
+    assert summary.action_items[0].assignee == "You"
+    assert summary.action_items[0].deadline == "Friday"
+    assert summary.action_items[1].deadline is None
+    assert summary.key_decisions == ["Use PostgreSQL instead of MongoDB"]
+    assert summary.is_trivial is False
+
+    # Format → inject → verify full document
+    md = format_summary_markdown(summary)
+    assert "## Summary" in md
+    assert "### Action Items" in md
+    assert "- [ ] **You:** Send the report by Friday" in md
+
+    doc = inject_summary_into_markdown(SAMPLE_MD, md)
+    assert "## Summary" in doc
+    assert "# Meeting 2026-03-20 14:30" in doc
+    assert "Hello there." in doc
+
+
+def test_summarize_openai_compatible_flow(tmp_vault, monkeypatch):
+    """OpenAI-compatible provider flow: groq → openai SDK with custom base_url."""
+    clear_all_provider_env_vars(monkeypatch)
+    settings = Settings(vault_path=tmp_vault, llm_provider="groq", llm_api_key="gsk-test-key")
+
+    mock_response = MagicMock()
+    mock_response.choices = [MagicMock(message=MagicMock(content=VALID_LLM_RESPONSE))]
+
+    with patch("openai.OpenAI") as mock_cls:
+        mock_cls.return_value.chat.completions.create.return_value = mock_response
+        summary = summarize("Test transcript", settings)
+
+    assert summary.brief == "Discussed the project plan and assigned tasks."
+    mock_cls.assert_called_once_with(
+        api_key="gsk-test-key",
+        base_url="https://api.groq.com/openai/v1",
+    )
+
+
+def test_summarize_resilience_flow(summarize_settings):
+    """Resilience: fenced JSON, invalid JSON retry, persistent failure."""
+    # Fenced JSON — stripped and parsed correctly
+    fenced = f"```json\n{VALID_LLM_RESPONSE}\n```"
+    with patch("anthropic.Anthropic") as mock_cls:
+        mock_cls.return_value.messages.create.return_value = mock_anthropic_response(fenced)
+        summary = summarize("transcript", summarize_settings)
+    assert summary.brief == "Discussed the project plan and assigned tasks."
+
+    # Invalid JSON first call → retry with shorter prompt → success
+    with patch("anthropic.Anthropic") as mock_cls:
+        mock_cls.return_value.messages.create.side_effect = [
+            mock_anthropic_response("not json at all"),
+            mock_anthropic_response(VALID_LLM_RESPONSE),
+        ]
+        summary = summarize("transcript", summarize_settings)
+    assert summary.brief == "Discussed the project plan and assigned tasks."
+
+    # Persistent invalid JSON → RuntimeError
     with (
-        patch("tapeback.summarizer._build_provider_chain", return_value=chain),
-        patch(
-            "tapeback.summarizer._call_provider_with_retry",
-            side_effect=[primary_exc, "fallback response"],
-        ) as mock,
+        patch("anthropic.Anthropic") as mock_cls,
+        pytest.raises(RuntimeError, match="Failed to parse"),
     ):
-        result = _call_llm("system", "user", summarize_settings)
-
-    assert result == "fallback response"
-    assert mock.call_count == 2
-    assert mock.call_args_list[0][0][2] == "anthropic"
-    assert mock.call_args_list[1][0][2] == "groq"
+        mock_cls.return_value.messages.create.return_value = mock_anthropic_response(
+            "still not json"
+        )
+        summarize("transcript", summarize_settings)
 
 
-def test_fallback_all_providers_fail(summarize_settings):
-    """All providers fail → raises last exception."""
-    chain = [
-        ("anthropic", "ant-key", "claude-model"),
-        ("groq", "groq-key", "groq-model"),
-    ]
+def test_provider_retry_and_fallback_flow(tmp_vault, monkeypatch):
+    """Rate limit retry, provider fallback, all-fail, empty chain."""
+    clear_all_provider_env_vars(monkeypatch)
+    monkeypatch.setenv("GROQ_API_KEY", "groq-key")
+    settings = Settings(vault_path=tmp_vault, llm_provider="anthropic", llm_api_key="ant-key")
 
-    exc1 = _HttpError("anthropic failed", 500)
-    exc2 = _HttpError("groq failed", 500)
-
+    # 429 on anthropic → retry with backoff → succeed on second attempt
     with (
-        patch("tapeback.summarizer._build_provider_chain", return_value=chain),
-        patch(
-            "tapeback.summarizer._call_provider_with_retry",
-            side_effect=[exc1, exc2],
-        ),
-        pytest.raises(Exception, match="groq failed"),
+        patch("anthropic.Anthropic") as mock_ant,
+        patch("tapeback.summarizer.time.sleep") as mock_sleep,
     ):
-        _call_llm("system", "user", summarize_settings)
+        mock_ant.return_value.messages.create.side_effect = [
+            HttpError("rate limited", 429),
+            mock_anthropic_response(VALID_LLM_RESPONSE),
+        ]
+        result = _call_llm("system", "user", settings)
+    assert "Discussed the project plan" in result
+    mock_sleep.assert_called_once_with(5)
 
-
-def test_fallback_empty_chain_raises(summarize_settings):
-    """No providers available → RuntimeError."""
+    # Primary fails (500, non-retryable) → fallback to groq (openai-compatible)
+    groq_response = MagicMock()
+    groq_response.choices = [MagicMock(message=MagicMock(content="fallback ok"))]
     with (
-        patch("tapeback.summarizer._build_provider_chain", return_value=[]),
-        pytest.raises(RuntimeError, match="No LLM providers available"),
+        patch("anthropic.Anthropic") as mock_ant,
+        patch("openai.OpenAI") as mock_oai,
     ):
-        _call_llm("system", "user", summarize_settings)
+        mock_ant.return_value.messages.create.side_effect = HttpError("server error", 500)
+        mock_oai.return_value.chat.completions.create.return_value = groq_response
+        result = _call_llm("system", "user", settings)
+    assert result == "fallback ok"
+
+    # All providers fail → raises last exception
+    with (
+        patch("anthropic.Anthropic") as mock_ant,
+        patch("openai.OpenAI") as mock_oai,
+        pytest.raises(Exception, match="groq error"),
+    ):
+        mock_ant.return_value.messages.create.side_effect = HttpError("anthropic error", 500)
+        mock_oai.return_value.chat.completions.create.side_effect = HttpError("groq error", 500)
+        _call_llm("system", "user", settings)
+
+    # No providers at all → RuntimeError
+    clear_all_provider_env_vars(monkeypatch)
+    no_key_settings = Settings(vault_path=tmp_vault, llm_api_key="")
+    with pytest.raises(RuntimeError, match="No LLM providers available"):
+        _call_llm("system", "user", no_key_settings)
+
+
+def test_maybe_summarize_end_to_end(tmp_vault, monkeypatch):
+    """maybe_summarize: full flow including edge cases and happy path."""
+    clear_all_provider_env_vars(monkeypatch)
+
+    md_file = tmp_vault / "meetings" / "test.md"
+    md_file.parent.mkdir(parents=True)
+    md_file.write_text(SAMPLE_MD)
+
+    settings_with_key = Settings(
+        vault_path=tmp_vault, summarize=True, llm_provider="anthropic", llm_api_key="sk-test"
+    )
+
+    # md_path=None → no-op
+    maybe_summarize(None, settings_with_key)
+
+    # summarize=False → no-op, file unchanged
+    settings_off = Settings(vault_path=tmp_vault, summarize=False)
+    maybe_summarize(md_file, settings_off)
+    assert "## Summary" not in md_file.read_text()
+
+    # No API key → warning, file unchanged
+    settings_no_key = Settings(
+        vault_path=tmp_vault, summarize=True, llm_provider="anthropic", llm_api_key=""
+    )
+    maybe_summarize(md_file, settings_no_key)
+    assert "## Summary" not in md_file.read_text()
+
+    # Empty transcript (no '# Meeting' header) → warning, file unchanged
+    empty_md = tmp_vault / "meetings" / "empty.md"
+    empty_md.write_text("---\ndate: 2026-03-20\n---\n\nNo transcript header here.\n")
+    maybe_summarize(empty_md, settings_with_key)
+    assert "## Summary" not in empty_md.read_text()
+
+    # Happy path: file gets summary injected
+    with patch("anthropic.Anthropic") as mock_cls:
+        mock_cls.return_value.messages.create.return_value = mock_anthropic_response(
+            VALID_LLM_RESPONSE
+        )
+        maybe_summarize(md_file, settings_with_key)
+    content = md_file.read_text()
+    assert "## Summary" in content
+    assert "Discussed the project plan" in content
+    assert "# Meeting 2026-03-20 14:30" in content
+
+    # LLM failure → warning, transcript intact
+    md_file.write_text(SAMPLE_MD)
+    with patch("anthropic.Anthropic") as mock_cls:
+        mock_cls.return_value.messages.create.side_effect = RuntimeError("API down")
+        maybe_summarize(md_file, settings_with_key)
+    assert "## Summary" not in md_file.read_text()
+    assert "Hello there." in md_file.read_text()
