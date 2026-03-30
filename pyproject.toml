@@ -106,6 +106,7 @@ addopts = "--cov=tapeback --cov-report=term-missing"
 
 [tool.coverage.run]
 source = ["src/tapeback"]
+omit = ["src/tapeback/tray.py"]  # GUI module, requires X display — tested locally only
 
 [tool.coverage.report]
 show_missing = true

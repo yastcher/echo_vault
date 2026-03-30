@@ -452,3 +452,15 @@ def test_stop_and_process_summarization_failure(tmp_path):
     assert md_path.exists()
     assert "Important content." in md_path.read_text()
     assert "## Summary" not in md_path.read_text()
+
+
+# --- tray command ---
+
+
+def test_tray_missing_dependency(runner):
+    """tapeback tray → helpful error when pystray not installed."""
+    with patch.dict("sys.modules", {"tapeback.tray": None}):
+        result = runner.invoke(cli, ["tray"])
+
+    assert result.exit_code != 0
+    assert "pystray" in result.output
