@@ -61,6 +61,7 @@ class Settings(BaseSettings):
     diarize: bool = True
     max_speakers: int | None = None
     clustering_threshold: float | None = None
+    spectral_merge_threshold: float = 0.95
 
     # Post-processing
     pause_threshold: float = 1.0  # seconds — split segments on word gaps >= this

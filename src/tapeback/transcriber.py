@@ -1,3 +1,4 @@
+import locale
 import os
 import sys
 from collections.abc import Iterable
@@ -11,9 +12,12 @@ from tapeback.settings import Settings
 
 # Work around PyAV bug: Cython directive c_string_encoding=ascii cannot handle
 # non-ASCII error messages from strerror_r() on non-English locales (e.g. Russian).
-# LC_MESSAGES=C forces POSIX error messages without affecting other locale categories.
+# glibc's strerror_r() uses dcgettext() which respects LANGUAGE env var for fallback
+# translations. Setting both env var AND C locale is required — env var alone does not
+# change the already-initialized C locale after Python startup.
 # See: https://github.com/PyAV-Org/PyAV — setup.py c_string_encoding directive.
 os.environ["LC_MESSAGES"] = "C"
+locale.setlocale(locale.LC_MESSAGES, "C")
 
 
 class Transcriber:

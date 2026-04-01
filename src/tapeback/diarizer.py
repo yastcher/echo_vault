@@ -475,7 +475,7 @@ def merge_similar_speakers(
     diarization_segments: list[DiarizationSegment],
     monitor_samples: np.ndarray,
     sample_rate: int,
-    similarity_threshold: float = 0.92,
+    similarity_threshold: float = 0.95,
 ) -> list[DiarizationSegment]:
     """Merge pyannote speakers with similar spectral profiles.
 
@@ -483,8 +483,10 @@ def merge_similar_speakers(
     multiple speakers.  Uses power-spectrum cosine similarity in the 100-4000 Hz
     voice frequency range.
 
-    Conservative threshold (default 0.92) ensures only very similar speakers
-    are merged, avoiding false merges of genuinely different speakers.
+    Threshold 0.95 is conservative enough to avoid false merges of genuinely
+    different speakers (e.g. two male voices from YouTube with cosine ~0.92)
+    while still catching pyannote over-segmentation (same speaker split into
+    pseudo-speakers typically has cosine > 0.98).
     """
     speakers = sorted({seg.speaker for seg in diarization_segments})
     if len(speakers) <= 1:

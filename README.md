@@ -261,6 +261,7 @@ All settings via environment variables (prefix `TAPEBACK_`) or
 | `TAPEBACK_DIARIZE` | `true` | Enable speaker diarization |
 | `TAPEBACK_HF_TOKEN` | *(empty)* | HuggingFace token ([setup](#speaker-diarization)) |
 | `TAPEBACK_MAX_SPEAKERS` | *(auto)* | Maximum number of speakers |
+| `TAPEBACK_SPECTRAL_MERGE_THRESHOLD` | `0.95` | Cosine similarity for merging over-segmented speakers (lower = more aggressive) |
 
 ### LLM summarization
 

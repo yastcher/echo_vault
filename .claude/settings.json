@@ -18,6 +18,7 @@
       "Bash(*uv run pytest*)",
       "Bash(uv pip:*)",
       "Bash(python*)",
+      "Bash(/opt/tapeback/bin/python:*)",
       "Bash(*tapeback/.venv/bin/python*)",
       "Bash(ls*)",
       "Bash(find*)",

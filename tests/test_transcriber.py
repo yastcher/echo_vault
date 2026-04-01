@@ -1,5 +1,6 @@
 """Transcriber tests — Whisper integration and segment processing."""
 
+import locale
 import os
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -13,8 +14,12 @@ def test_lc_messages_set_for_pyav_locale_workaround():
     PyAV's Cython code uses c_string_encoding=ascii. On non-English locales,
     FFmpeg's av_strerror() may return non-ASCII text via strerror_r(), causing
     UnicodeDecodeError in PyAV's err_check().
+    Both env var and C locale must be set — env var alone is not enough.
     """
     assert os.environ.get("LC_MESSAGES") == "C"
+    lc = locale.getlocale(locale.LC_MESSAGES)
+    # locale.getlocale returns (None, None) for "C" locale
+    assert lc == (None, None) or lc[0] == "C"
 
 
 def test_transcribe_stereo_pipeline(settings):

@@ -1,15 +1,19 @@
 """Regression tests for diarizer bugs."""
 
+import wave
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import numpy as np
 import pytest
 
+from tapeback.audio import split_channels_16k
 from tapeback.diarizer import (
     Diarizer,
     assign_speakers,
     filter_silent_segments,
     load_stereo_channels,
+    merge_similar_speakers,
     split_on_silence,
 )
 from tapeback.models import DiarizationSegment, Segment, Word
@@ -166,6 +170,39 @@ def test_monitor_speech_not_attributed_to_you(tmp_path):
 
 
 # --- Dual-channel pipeline ---
+
+MULTI_SPEAKER_WAV = Path(__file__).parent.parent / "data" / "2026-04-01_18-41-14.wav"
+
+
+@pytest.mark.skipif(not MULTI_SPEAKER_WAV.exists(), reason="test WAV not available")
+def test_spectral_merge_does_not_collapse_different_speakers(tmp_path):
+    """merge_similar_speakers must not merge genuinely different speakers.
+
+    Bug: Two different male voices from YouTube (Claude 4 narrator + Charles
+    Hoskinson) had cosine similarity 0.9246 and were incorrectly merged with
+    the 0.92 threshold.  pyannote correctly identified 3 speakers, but spectral
+    merging collapsed SPEAKER_00 and SPEAKER_02 into one.
+    """
+    _, monitor_16k = split_channels_16k(MULTI_SPEAKER_WAV, tmp_path)
+
+    with wave.open(str(monitor_16k), "rb") as wf:
+        sr = wf.getframerate()
+        raw = np.frombuffer(wf.readframes(wf.getnframes()), dtype=np.int16).astype(np.float32)
+
+    # Segments as identified by pyannote (3 distinct speakers)
+    segments = [
+        DiarizationSegment(speaker="SPEAKER_00", start=16.03, end=22.73),
+        DiarizationSegment(speaker="SPEAKER_02", start=30.47, end=37.07),
+        DiarizationSegment(speaker="SPEAKER_00", start=45.49, end=56.48),
+    ]
+
+    merged = merge_similar_speakers(segments, raw, sr)
+    speakers = {s.speaker for s in merged}
+    assert len(speakers) >= 2, (
+        f"Different speakers collapsed into one: {speakers}. "
+        "Spectral merging threshold is too aggressive."
+    )
+
 
 TEST_WAV = Path(__file__).parent.parent / "data" / "2026-03-19_02-45-24.wav"
 

@@ -35,13 +35,16 @@ No web servers, databases, Docker.
 - Type check: `uv run ty check`
 - Test: `uv run pytest` (coverage ≥85% enforced via pyproject.toml)
 
+## Code quality
+
+- No magic numbers in logic. Thresholds, limits, sizes, ratios — all go into `settings.py` as named settings with `TAPEBACK_` env vars, or as module-level constants with a descriptive name. Function parameter defaults are not a substitute for proper settings.
+- No local imports inside functions. All imports at the top of the file.
+  Local imports are only acceptable when explicitly required by documentation (e.g. circular dependency workarounds).
+
 ## Code style
 
 Enforced by ruff. See pyproject.toml `[tool.ruff]` for full config.
 Do not duplicate ruff rules here — if ruff can check it, ruff owns it.
-
-- No local imports inside functions. All imports at the top of the file.
-  Local imports are only acceptable when explicitly required by documentation (e.g. circular dependency workarounds).
 
 ## Testing
 
@@ -62,6 +65,8 @@ Do not duplicate ruff rules here — if ruff can check it, ruff owns it.
 - After a release tag is pushed, all subsequent changes MUST go into a new version.
   Never amend a released version — bump the version first, then make changes.
 - CHANGELOG entries for released versions are immutable. Never edit past sections — create a new patch version (e.g. 0.8.1 → 0.8.2) for any additions or corrections.
+- Never use `[Unreleased]` — always assign the next concrete version number with today's date (e.g. `## [0.8.7] — 2026-04-01`).
+- Order CHANGELOG entries by user impact: user-facing fixes first, infrastructure/internal changes last.
 - Version is the single source of truth in `pyproject.toml`. All other files (PKGBUILDs) are updated via `scripts/release.sh <version>`.
 - Release flow: bump version → update CHANGELOG → commit → tag → push → CI publishes to PyPI → update AUR
 - AUR publishing is manual: clone AUR repo, copy PKGBUILD, generate `.SRCINFO`, compute sha256sum, push.

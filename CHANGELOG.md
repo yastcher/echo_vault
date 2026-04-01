@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.7] — 2026-04-01
+
+### Fixed
+- Speaker diarization: two different speakers incorrectly merged into one; raised spectral merging cosine similarity threshold from 0.92 to 0.95
+- PyAV `UnicodeDecodeError` crash on non-English locales: `os.environ` alone doesn't change the C locale after Python startup; added `locale.setlocale(LC_MESSAGES, "C")` to actually switch glibc's `strerror_r()` output to ASCII
+
 ## [0.8.6] — 2026-04-01
 
 ### Fixed
