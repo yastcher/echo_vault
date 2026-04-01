@@ -16,42 +16,30 @@ Works with any video call platform: Google Meet, Zoom, Teams, Telegram, Discord,
 - **Speaker diarization**: pyannote identifies who said what
 - **Stereo channel separation**: your mic (left) vs. others (right) for accurate "You" attribution
 - **Obsidian-native output**: Markdown with YAML frontmatter, wikilinks to audio files
-- **LLM summarization**: optional, via Anthropic, OpenAI, Groq, Gemini, DeepSeek, OpenRouter, Qwen (with automatic provider fallback)
+- **LLM summarization**: Anthropic, OpenAI, Groq, Gemini, DeepSeek, OpenRouter, Qwen (with automatic provider fallback)
+- **System tray**: start/stop recording from the tray icon, no terminal needed
 - **CLI-first**: `tapeback start`, Ctrl+C to stop, done
 
-## Requirements
-
-- Linux (PipeWire or PulseAudio)
-- Python 3.13+
-- ffmpeg
-- parecord (usually comes with `pulseaudio-utils` or `pipewire-pulse`)
-- NVIDIA GPU (optional, for faster transcription and diarization)
+tapeback is modular — the base package handles recording and transcription.
+Speaker diarization and LLM summaries are optional and installed separately.
 
 ## Installation
-
-The base package records audio and transcribes locally. Optional extras add
-speaker diarization and LLM summaries:
-
-| Extra | What it adds | Size      |
-|---|---|-----------|
-| *(none)* | Recording + transcription | ~320 MB |
-| `[tray]` | System tray icon (no terminal needed) | +1 MB |
-| `[llm]` | LLM summarization (Anthropic, OpenAI, Gemini, etc.) | +50 MB    |
-| `[diarize]` | Speaker diarization (pyannote + PyTorch) | +2 GB     |
-| `[llm,diarize]` | Everything | +2 GB     |
 
 ### Arch Linux (AUR)
 
 ```bash
-yay -S tapeback                  # basic
-yay -S tapeback-tray             # + system tray icon
-yay -S tapeback-llm              # + summaries
-yay -S tapeback-diarize          # + speaker diarization (~2 GB PyTorch)
+yay -S tapeback                              # recording + transcription
+yay -S tapeback tapeback-tray                # + system tray icon
+yay -S tapeback tapeback-llm                 # + LLM summaries
+yay -S tapeback tapeback-diarize             # + speaker diarization
+yay -S tapeback tapeback-tray tapeback-llm tapeback-diarize  # everything
 ```
 
-### pip / uv / pipx
+All system dependencies (ffmpeg, PipeWire) are installed automatically.
 
-1. Install system dependencies:
+### pip / uv
+
+Install system dependencies first:
 
 ```bash
 # Arch / Manjaro
@@ -59,37 +47,38 @@ sudo pacman -S python uv ffmpeg pipewire-pulse
 
 # Ubuntu / Debian
 sudo apt install python3 pipx ffmpeg pulseaudio-utils
-pipx ensurepath  # adds ~/.local/bin to PATH
 
 # Fedora
 sudo dnf install python3 pipx ffmpeg pipewire-pulseaudio
-pipx ensurepath
 ```
 
-2. Install tapeback:
+Then install tapeback:
 
 ```bash
-uv tool install tapeback                  # basic
-uv tool install "tapeback[llm]"           # + summaries
-uv tool install "tapeback[diarize]"       # + speaker diarization
-uv tool install "tapeback[llm,diarize]"   # everything
+uv tool install tapeback                          # recording + transcription
+uv tool install "tapeback[tray]"                  # + system tray icon
+uv tool install "tapeback[llm]"                   # + LLM summaries
+uv tool install "tapeback[diarize]"               # + speaker diarization
+uv tool install "tapeback[tray,llm,diarize]"      # everything
 ```
 
-or with pipx:
+<details>
+<summary>pipx or Nix</summary>
 
 ```bash
-pipx install tapeback                     # basic
-pipx install "tapeback[llm,diarize]"      # everything
+# pipx
+pipx install tapeback
+pipx install "tapeback[tray,llm,diarize]"         # everything
+
+# Nix
+nix run github:yastcher/tapeback                  # basic
+nix run github:yastcher/tapeback#tray             # + system tray icon
+nix run github:yastcher/tapeback#llm              # + LLM summaries
+nix run github:yastcher/tapeback#diarize          # + speaker diarization
+nix run github:yastcher/tapeback#full             # everything
 ```
 
-### Nix
-
-```bash
-nix run github:yastcher/tapeback              # basic
-nix run github:yastcher/tapeback#llm          # + summaries
-nix run github:yastcher/tapeback#diarize      # + speaker diarization
-nix run github:yastcher/tapeback#full         # everything
-```
+</details>
 
 ## Quick start
 
@@ -106,24 +95,91 @@ mkdir -p ~/.config/tapeback
 echo 'TAPEBACK_VAULT_PATH=~/Documents/obsidian/vault' > ~/.config/tapeback/.env
 ```
 
-### System tray
+## System tray
 
-Run without a terminal — right-click the icon to start/stop recording:
+Run without a terminal — right-click the tray icon to start/stop recording:
 
 ```bash
-uv pip install tapeback[tray]
 tapeback tray
 ```
 
-The icon shows: **gray** = idle, **red** = recording, **orange** = processing.
+Icon color shows the current state:
+**gray** = idle, **red** = recording, **orange** = processing.
 
-### More examples
+To autostart on login, create `~/.config/autostart/tapeback-tray.desktop`:
+
+```ini
+[Desktop Entry]
+Name=tapeback
+Exec=tapeback tray
+Type=Application
+X-GNOME-Autostart-enabled=true
+```
+
+Works on any XDG-compatible desktop (KDE, GNOME, Hyprland, Sway, etc.).
+
+## Speaker diarization
+
+Speaker diarization identifies who said what in the recording. Without it,
+tapeback uses stereo channels: your mic is labeled "You", everything else
+is labeled "Other".
+
+To enable diarization, you need a HuggingFace token with access to pyannote models:
+
+1. Create account at [huggingface.co](https://huggingface.co)
+2. Accept license at [pyannote/speaker-diarization-3.1](https://huggingface.co/pyannote/speaker-diarization-3.1)
+3. Accept license at [pyannote/segmentation-3.0](https://huggingface.co/pyannote/segmentation-3.0)
+4. Create token at [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens)
+5. Add to `~/.config/tapeback/.env`:
 
 ```bash
-tapeback start "weekly-standup"    # name the session
-tapeback process meeting.mp3       # transcribe an existing file
-tapeback summarize transcript.md   # add LLM summary to a transcript
-tapeback status                    # show current settings
+TAPEBACK_HF_TOKEN=hf_your_token_here
+```
+
+> First run downloads the pyannote model (~1 GB). An NVIDIA GPU is strongly
+> recommended — diarization on CPU is very slow.
+
+## LLM summarization
+
+After transcription, tapeback can add a brief summary, action items, and key
+decisions using an LLM.
+
+Set an API key for at least one provider in `~/.config/tapeback/.env`:
+
+```bash
+TAPEBACK_LLM_PROVIDER=gemini
+GEMINI_API_KEY=...
+```
+
+| Provider | Env var | Default model |
+|---|---|---|
+| `anthropic` | `ANTHROPIC_API_KEY` | claude-sonnet-4-20250514 |
+| `openai` | `OPENAI_API_KEY` | gpt-4o |
+| `groq` | `GROQ_API_KEY` | llama-3.3-70b-versatile |
+| `gemini` | `GEMINI_API_KEY` | gemini-2.5-flash |
+| `openrouter` | `OPENROUTER_API_KEY` | google/gemini-2.5-flash:free |
+| `deepseek` | `DEEPSEEK_API_KEY` | deepseek-chat |
+| `qwen` | `DASHSCOPE_API_KEY` | qwen-turbo |
+
+If the primary provider fails, tapeback automatically tries the next available
+provider (any provider with an API key set).
+
+## CLI reference
+
+```
+tapeback start [NAME]              Start recording (Ctrl+C to stop)
+tapeback stop                      Stop recording from another terminal
+tapeback tray                      System tray icon
+tapeback process <FILE> [--name N] Transcribe an existing audio file
+tapeback summarize <FILE>          Add LLM summary to transcript
+tapeback status                    Show recording status and settings
+```
+
+```bash
+tapeback start --no-diarize        # skip speaker identification
+tapeback start --no-summarize      # skip LLM summary
+tapeback process meeting.mp3 --name "weekly-standup"
+tapeback summarize notes.md --provider gemini --model gemini-2.5-pro
 ```
 
 ## Output format
@@ -165,17 +221,8 @@ Brief overview of the meeting.
 [00:02:45] **Speaker 2:** Can we start with the backend changes?
 ```
 
-## Roadmap
-
-- **Speaker profiles**: learn and remember recurring speakers across meetings
-- **Real-time transcription**: live streaming with partial results
-- **Multi-language meetings**: detect and handle language switches mid-meeting
-- **Windows support**: WASAPI loopback capture
-
----
-
 <details>
-<summary><h2>Advanced configuration</h2></summary>
+<summary><h2>Configuration reference</h2></summary>
 
 All settings via environment variables (prefix `TAPEBACK_`) or
 `~/.config/tapeback/.env` file.
@@ -211,126 +258,41 @@ All settings via environment variables (prefix `TAPEBACK_`) or
 
 | Variable | Default | Description |
 |---|---|---|
-| `TAPEBACK_DIARIZE` | `true` | Enable speaker diarization (requires `tapeback[diarize]`) |
-| `TAPEBACK_HF_TOKEN` | *(empty)* | HuggingFace token for pyannote models |
+| `TAPEBACK_DIARIZE` | `true` | Enable speaker diarization |
+| `TAPEBACK_HF_TOKEN` | *(empty)* | HuggingFace token ([setup](#speaker-diarization)) |
 | `TAPEBACK_MAX_SPEAKERS` | *(auto)* | Maximum number of speakers |
 
-Speaker diarization requires the `diarize` extra (`uv tool install "tapeback[diarize]"`)
-and a HuggingFace token with access to pyannote models:
-
-1. Create account at [huggingface.co](https://huggingface.co)
-2. Accept license at [pyannote/speaker-diarization-3.1](https://huggingface.co/pyannote/speaker-diarization-3.1)
-3. Accept license at [pyannote/segmentation-3.0](https://huggingface.co/pyannote/segmentation-3.0)
-4. Accept license at [pyannote/speaker-diarization-community-1](https://huggingface.co/pyannote/speaker-diarization-community-1)
-5. Create token at [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens)
-6. Set `TAPEBACK_HF_TOKEN=hf_your_token_here`
-
-Without a token, tapeback still works but skips diarization.
-
 ### LLM summarization
-
-Requires the `llm` extra: `uv tool install "tapeback[llm]"`
 
 | Variable | Default | Description |
 |---|---|---|
 | `TAPEBACK_SUMMARIZE` | `true` | Enable LLM summarization |
-| `TAPEBACK_LLM_PROVIDER` | `anthropic` | Primary LLM provider |
+| `TAPEBACK_LLM_PROVIDER` | `anthropic` | Primary provider ([list](#llm-summarization)) |
 | `TAPEBACK_LLM_API_KEY` | *(empty)* | API key (or use provider-specific env var) |
 | `TAPEBACK_LLM_MODEL` | *(provider default)* | Override model name |
 
-Supported providers and their env vars:
+</details>
 
-| Provider | Env var | Default model |
-|---|---|---|
-| `anthropic` | `ANTHROPIC_API_KEY` | claude-sonnet-4-20250514 |
-| `openai` | `OPENAI_API_KEY` | gpt-4o |
-| `groq` | `GROQ_API_KEY` | llama-3.3-70b-versatile |
-| `gemini` | `GEMINI_API_KEY` | gemini-2.5-flash |
-| `openrouter` | `OPENROUTER_API_KEY` | google/gemini-2.5-flash:free |
-| `deepseek` | `DEEPSEEK_API_KEY` | deepseek-chat |
-| `qwen` | `DASHSCOPE_API_KEY` | qwen-turbo |
-
-If the primary provider fails, tapeback automatically tries the next available provider (any provider with an API key set).
-
-### CLI reference
-
-```
-tapeback --help                    Show help and quick start guide
-tapeback start [NAME]              Start recording (Ctrl+C to stop)
-tapeback stop                      Stop recording from another terminal
-tapeback process <FILE> [--name N] Transcribe an existing audio file
-tapeback summarize <FILE>          Add LLM summary to transcript
-tapeback status                    Show recording status and settings
-```
+## Uninstall
 
 ```bash
-tapeback start --no-diarize        # Skip speaker identification
-tapeback start --no-summarize      # Skip LLM summary
-tapeback process file.mp3 --name "weekly-standup"
-tapeback summarize file.md --provider gemini --model gemini-2.5-pro
-```
-
-### Uninstall
-
-```bash
-# pip / uv
-uv tool uninstall tapeback
-
-# pipx
-pipx uninstall tapeback
-
 # Arch Linux
 yay -R tapeback tapeback-tray tapeback-diarize tapeback-llm
 
+# pip / uv
+uv tool uninstall tapeback
+
 # Remove cached ML models (~2-5 GB)
-# Skip if you have other HuggingFace projects
+# Skip if you use HuggingFace for other projects
 rm -rf ~/.cache/huggingface/
 ```
 
-</details>
+## Roadmap
 
-<details>
-<summary><h2>Development</h2></summary>
-
-### Architecture
-
-```
-src/tapeback/
-  cli.py          Click CLI (start, stop, process, summarize, status)
-  recorder.py     PulseAudio recording via parecord
-  audio.py        ffmpeg audio processing (split channels, normalize, convert)
-  transcriber.py  faster-whisper transcription
-  diarizer.py     pyannote speaker diarization + spectral speaker merging
-  formatter.py    Markdown generation (pure formatting, no I/O)
-  vault.py        Obsidian vault file I/O
-  tray.py         System tray icon (pystray, optional)
-  summarizer.py   LLM summarization with multi-provider fallback
-  models.py       Domain objects (Segment, Word, DiarizationSegment, Summary)
-  settings.py     pydantic-settings configuration
-```
-
-### Setup
-
-```bash
-git clone https://github.com/yastcher/tapeback
-cd tapeback
-uv sync --group dev
-
-uv run ruff check       # lint
-uv run ruff format      # format
-uv run ty check         # type check
-uv run pytest           # test (coverage >= 85%)
-```
-
-### Releasing
-
-```bash
-scripts/release.sh 0.9.0          # bump version in pyproject.toml + PKGBUILDs
-# commit, tag, push → CI publishes to PyPI
-scripts/aur-publish.sh 0.9.0      # update all 4 AUR packages
-```
-
-</details>
+- **Speaker profiles**: learn and remember recurring speakers across meetings
+- **Real-time transcription**: live streaming with partial results
+- **Multi-language meetings**: detect and handle language switches mid-meeting
+- **Windows support**: WASAPI loopback capture
 
 ## Support
 
