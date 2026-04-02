@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.9] — 2026-04-02
+
+### Fixed
+- Lost speech after long pauses: Whisper VAD merged all speech chunks into one stream, losing speakers separated by silence; added `chunk_length=15` to split VAD output before transcription
+
+### Added
+- `TAPEBACK_CHUNK_LENGTH` setting (default `15s`) — max VAD chunk size before splitting for Whisper
+
 ## [0.8.8] — 2026-04-02
 
 ### Added

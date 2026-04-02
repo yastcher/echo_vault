@@ -47,6 +47,7 @@ class Settings(BaseSettings):
     compute_type: str = "auto"  # "int8"/"float16"
     beam_size: int = 5
     vad_filter: bool = True
+    chunk_length: int = 15  # seconds — max VAD chunk before splitting for Whisper
     condition_on_previous_text: bool = False
 
     # Audio

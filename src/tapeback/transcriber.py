@@ -128,6 +128,7 @@ class Transcriber:
             language=language,
             beam_size=self._settings.beam_size,
             vad_filter=self._settings.vad_filter,
+            chunk_length=self._settings.chunk_length,
             word_timestamps=True,
             condition_on_previous_text=self._settings.condition_on_previous_text,
         )
@@ -143,6 +144,7 @@ class Transcriber:
                     language=self._settings.language,
                     beam_size=self._settings.beam_size,
                     vad_filter=self._settings.vad_filter,
+                    chunk_length=self._settings.chunk_length,
                     word_timestamps=True,
                     condition_on_previous_text=self._settings.condition_on_previous_text,
                 )

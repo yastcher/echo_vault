@@ -64,8 +64,8 @@ Do not duplicate ruff rules here — if ruff can check it, ruff owns it.
 - Semantic Versioning: MAJOR.MINOR.PATCH
 - After a release tag is pushed, all subsequent changes MUST go into a new version.
   Never amend a released version — bump the version first, then make changes.
-- CHANGELOG entries for released versions are immutable. Never edit past sections — create a new patch version (e.g. 0.8.1 → 0.8.2) for any additions or corrections.
-- Never use `[Unreleased]` — always assign the next concrete version number with today's date (e.g. `## [0.8.7] — 2026-04-01`).
+- CHANGELOG entries for released versions are immutable. Before writing to CHANGELOG.md, run `git tag --sort=-v:refname | head -5` — if the top section version ≤ latest tag, that section is frozen. Create a new patch version (e.g. 0.8.8 → 0.8.9) with today's date.
+- Never use `[Unreleased]` — always assign the next concrete version number with today's date (e.g. `## [0.8.9] — 2026-04-02`).
 - Order CHANGELOG entries by user impact: user-facing fixes first, infrastructure/internal changes last.
 - Version is the single source of truth in `pyproject.toml`. All other files (PKGBUILDs) are updated via `scripts/release.sh <version>`.
 - Release flow: bump version → update CHANGELOG → commit → tag → push → CI publishes to PyPI → update AUR
@@ -95,7 +95,7 @@ Do not duplicate ruff rules here — if ruff can check it, ruff owns it.
 4. `uv run pytest`
 5. Security review (see checklist below)
 6. **Always update README.md** when features, settings, commands, or architecture change
-7. **Always update CHANGELOG.md** — add entries under `## [Unreleased]` or current version
+7. **Always update CHANGELOG.md** — check `git tag` first; if top section is already released, bump patch version
 
 Do not finish until lint, types, and tests pass.
 
