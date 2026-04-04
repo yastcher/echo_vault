@@ -184,12 +184,19 @@ tapeback summarize notes.md --provider gemini --model gemini-2.5-pro
 
 ## Output format
 
+Stereo recordings produce two transcript sections:
+- **Transcript** — raw Whisper output with channel-based labels (You / Other)
+- **Diarized Transcript** — speaker-identified output (You / Speaker 1 / Speaker 2 / ...)
+
+Words where Whisper is uncertain (probability < 0.5) are shown in *italics*.
+
 ```markdown
 ---
 date: 2026-03-23
 time: "14:30"
 duration: "01:23:45"
 language: en
+audio: "[[attachments/audio/2026-03-23_14-30-00.wav]]"
 tags:
   - meeting
   - transcript
@@ -209,16 +216,27 @@ Brief overview of the meeting.
 - Use PostgreSQL instead of MongoDB
 
 ---
-
 # Meeting 2026-03-23 14:30
 
-![[attachments/audio/2026-03-23_14-30-00.wav]]
+**Duration:** 1h 23m 45s | **Language:** en
 
-[00:00:01] **You:** Hello, let's start with the backend changes.
+---
+
+## Transcript
+
+[00:00:01] **You:** Hello, let's start with the *backend* changes.
+
+[00:01:23] **Other:** Sure, I have the slides ready.
+
+---
+
+## Diarized Transcript
+
+[00:00:01] **You:** Hello, let's start with the *backend* changes.
 
 [00:01:23] **Speaker 1:** Sure, I have the slides ready.
 
-[00:02:45] **Speaker 2:** Can we start with the backend changes?
+[00:02:45] **Speaker 1:** Can we move on to the frontend?
 ```
 
 <details>
@@ -244,7 +262,7 @@ All settings via environment variables (prefix `TAPEBACK_`) or
 | `TAPEBACK_DEVICE` | `cuda` | `cuda` or `cpu` |
 | `TAPEBACK_COMPUTE_TYPE` | `auto` | `auto`, `float16`, `int8`, or `float32` (`auto` picks `int8` when free VRAM < 4 GiB) |
 | `TAPEBACK_BEAM_SIZE` | `5` | Whisper beam search width |
-| `TAPEBACK_CHUNK_LENGTH` | `15` | Max VAD chunk (seconds) before splitting for Whisper; prevents lost speech after long pauses |
+| `TAPEBACK_CHUNK_LENGTH` | `2` | Max VAD chunk (seconds) before splitting for Whisper; prevents lost speech after long pauses |
 | `TAPEBACK_PAUSE_THRESHOLD` | `1.0` | Seconds; split segments on silence gaps >= this |
 
 ### Audio

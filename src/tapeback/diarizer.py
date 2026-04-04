@@ -1,4 +1,5 @@
 import contextlib
+import subprocess
 import sys
 import wave
 from pathlib import Path
@@ -6,8 +7,35 @@ from typing import Any
 
 import numpy as np
 
+from tapeback import const
+from tapeback.channel import classify_segment_by_channel, load_stereo_channels
 from tapeback.models import DiarizationSegment, Segment
 from tapeback.settings import Settings
+
+# pyannote segmentation + embedding models need ~1-1.5 GB VRAM during inference
+DIARIZATION_VRAM_MIN_MIB = 1500
+
+# Minor speaker absorption: speakers with very little speech are likely
+# echo/crosstalk artifacts.  Use a lower merge threshold for them.
+MINOR_SPEAKER_MAX_SEC = 15.0  # absolute: speaker with < 15s is potentially minor
+MINOR_SPEAKER_RATIO = 0.2  # relative: must have < 20% of the dominant speaker's speech
+MINOR_SPEAKER_MERGE_THRESHOLD = 0.92  # lower cosine for absorbing minor speakers
+
+
+def _get_free_vram_mib() -> int | None:
+    """Get free GPU VRAM in MiB via nvidia-smi. Returns None if unavailable."""
+    try:
+        result = subprocess.run(
+            ["nvidia-smi", "--query-gpu=memory.free", "--format=csv,noheader,nounits"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode == 0:
+            return int(result.stdout.strip().split("\n")[0])
+    except (FileNotFoundError, ValueError, subprocess.TimeoutExpired):
+        pass
+    return None
 
 
 def diarization_available() -> bool:
@@ -48,7 +76,7 @@ class Diarizer:
 
         self._settings = settings
         pipeline = Pipeline.from_pretrained(
-            "pyannote/speaker-diarization-3.1",
+            const.PYANNOTE_MODEL,
             token=settings.hf_token,
         )
         if pipeline is None:
@@ -61,15 +89,23 @@ class Diarizer:
             self._pipeline.instantiate(params)
 
         if settings.device == "cuda":
-            try:
-                import torch
-
-                self._pipeline.to(torch.device("cuda"))
-            except RuntimeError:
+            free_mib = _get_free_vram_mib()
+            if free_mib is not None and free_mib < DIARIZATION_VRAM_MIN_MIB:
                 print(
-                    "Warning: CUDA not available for diarization, using CPU",
+                    f"Warning: Not enough VRAM for diarization "
+                    f"({free_mib} MiB free < {DIARIZATION_VRAM_MIN_MIB} MiB), using CPU",
                     file=sys.stderr,
                 )
+            else:
+                try:
+                    import torch
+
+                    self._pipeline.to(torch.device("cuda"))
+                except RuntimeError:
+                    print(
+                        "Warning: CUDA not available for diarization, using CPU",
+                        file=sys.stderr,
+                    )
 
     def _run_pipeline(self, audio_path: Path) -> Any:
         """Run pyannote pipeline with optional max_speakers."""
@@ -119,314 +155,50 @@ class Diarizer:
             torch.cuda.empty_cache()
 
 
-def _rms_for_range(
-    start: float,
-    end: float,
-    samples: np.ndarray,
-    sample_rate: int,
-) -> float:
-    """Compute RMS energy for a time range in samples array."""
-    sf = max(0, min(int(start * sample_rate), len(samples)))
-    ef = max(0, min(int(end * sample_rate), len(samples)))
-    if ef <= sf:
-        return 0.0
-    return float(np.sqrt(np.mean(samples[sf:ef] ** 2)))
-
-
-def filter_silent_segments(
-    segments: list[Segment],
-    channel_samples: np.ndarray,
-    sample_rate: int,
-    rms_threshold: float = 200.0,
-) -> list[Segment]:
-    """Remove segments (or parts of segments) where channel RMS is below threshold.
-
-    Uses raw (pre-loudnorm) channel samples so that normalization doesn't
-    inflate background noise above the threshold.
-
-    When word timestamps are available, filters at word level: drops individual
-    words with low RMS (crosstalk from other channel), keeps the rest, and
-    rebuilds the segment from surviving words. This prevents crosstalk fragments
-    like monitor audio bleeding into mic from contaminating real speech segments.
-
-    Segments without word timestamps are filtered at segment level.
-    """
-    result = []
-    for seg in segments:
-        if seg.words:
-            kept_words = [
-                w
-                for w in seg.words
-                if _rms_for_range(w.start, w.end, channel_samples, sample_rate) >= rms_threshold
-            ]
-            if not kept_words:
-                continue
-            result.append(
-                Segment(
-                    start=kept_words[0].start,
-                    end=kept_words[-1].end,
-                    text=" ".join(w.word.strip() for w in kept_words),
-                    words=kept_words,
-                    speaker=seg.speaker,
-                )
-            )
-        else:
-            rms = _rms_for_range(seg.start, seg.end, channel_samples, sample_rate)
-            if rms >= rms_threshold:
-                result.append(seg)
-
-    return result
-
-
-def split_on_silence(
-    segments: list[Segment],
-    mic_samples: np.ndarray,
-    sample_rate: int,
-    pause_threshold: float = 1.0,
-    monitor_samples: np.ndarray | None = None,
-) -> list[Segment]:
-    """Split segments at silence gaps detected in raw mic audio.
-
-    Uses an adaptive threshold: a window is "silent" when mic RMS is below
-    the segment's median RMS * 0.4.  When a monitor channel is provided,
-    a window also counts as silent when the monitor is louder than the mic
-    (mic_rms < monitor_rms * 0.3) — the user is quiet while the remote
-    speaker is active.
-
-    A contiguous silent region >= pause_threshold seconds triggers a split.
-    """
-    window_dur = 0.1  # 100ms windows
-    window_samples = int(window_dur * sample_rate)
-    result: list[Segment] = []
-
-    for seg in segments:
-        sf = max(0, min(int(seg.start * sample_rate), len(mic_samples)))
-        ef = max(0, min(int(seg.end * sample_rate), len(mic_samples)))
-
-        if ef - sf < window_samples:
-            result.append(seg)
-            continue
-
-        # Compute mic RMS per window
-        mic_rms_values: list[tuple[float, float]] = []  # (time, rms)
-        monitor_rms_values: list[float] = []
-
-        for i in range(sf, ef, window_samples):
-            end_i = min(i + window_samples, ef)
-            chunk = mic_samples[i:end_i]
-            rms = float(np.sqrt(np.mean(chunk.astype(np.float64) ** 2)))
-            t = i / sample_rate
-            mic_rms_values.append((t, rms))
-
-            if monitor_samples is not None:
-                ms = max(0, min(i, len(monitor_samples)))
-                me = max(0, min(end_i, len(monitor_samples)))
-                if me > ms:
-                    mon_rms = float(
-                        np.sqrt(np.mean(monitor_samples[ms:me].astype(np.float64) ** 2))
-                    )
-                else:
-                    mon_rms = 0.0
-                monitor_rms_values.append(mon_rms)
-
-        if not mic_rms_values:
-            result.append(seg)
-            continue
-
-        # Adaptive threshold: 40% of median mic RMS within this segment
-        all_rms = [r for _, r in mic_rms_values]
-        median_rms = float(np.median(all_rms))
-        adaptive_threshold = median_rms * 0.4
-
-        # Detect silent windows
-        silence_start: float | None = None
-        split_points: list[float] = []
-
-        for idx, (t, mic_rms) in enumerate(mic_rms_values):
-            is_quiet = mic_rms < adaptive_threshold
-
-            # Monitor-relative check: mic is much quieter than monitor
-            if not is_quiet and monitor_rms_values:
-                mon_rms = monitor_rms_values[idx]
-                if mon_rms > 0 and mic_rms < mon_rms * 0.3:
-                    is_quiet = True
-
-            if is_quiet:
-                if silence_start is None:
-                    silence_start = t
-            elif silence_start is not None:
-                silence_dur = t - silence_start
-                if silence_dur >= pause_threshold:
-                    split_points.append(silence_start + silence_dur / 2)
-                silence_start = None
-
-        # Check trailing silence
-        if silence_start is not None:
-            silence_dur = seg.end - silence_start
-            if silence_dur >= pause_threshold:
-                split_points.append(silence_start + silence_dur / 2)
-
-        if not split_points:
-            result.append(seg)
-            continue
-
-        # Build sub-segments
-        boundaries = [seg.start, *split_points, seg.end]
-        for i in range(len(boundaries) - 1):
-            sub_start = boundaries[i]
-            sub_end = boundaries[i + 1]
-
-            if seg.words:
-                sub_words = [
-                    w for w in seg.words if w.start >= sub_start - 0.05 and w.end <= sub_end + 0.05
-                ]
-                if not sub_words:
-                    continue
-                result.append(
-                    Segment(
-                        start=sub_words[0].start,
-                        end=sub_words[-1].end,
-                        text=" ".join(w.word.strip() for w in sub_words),
-                        words=sub_words,
-                        speaker=seg.speaker,
-                    )
-                )
-            # No words — keep the sub-segment with original text proportioned
-            elif sub_end - sub_start >= 0.5:
-                result.append(
-                    Segment(
-                        start=sub_start,
-                        end=sub_end,
-                        text=seg.text,
-                        words=None,
-                        speaker=seg.speaker,
-                    )
-                )
-
-    return result
-
-
 def merge_channel_segments(
     mic_segments: list[Segment],
     monitor_segments: list[Segment],
 ) -> list[Segment]:
     """Merge segments from both channels, sorted by start time.
 
-    Overlapping segments (simultaneous speech) are kept as-is.
+    After sorting, consecutive segments from the same speaker are consolidated
+    into a single segment.  Overlapping segments from different speakers are
+    kept separate.
     """
-    return sorted(mic_segments + monitor_segments, key=lambda s: s.start)
+    merged = sorted(mic_segments + monitor_segments, key=lambda s: s.start)
+    return consolidate_segments(merged)
 
 
-def load_stereo_channels(stereo_wav: Path) -> tuple[np.ndarray, np.ndarray, int]:
-    """Load stereo WAV and return (mic_channel, monitor_channel, sample_rate).
+def consolidate_segments(segments: list[Segment]) -> list[Segment]:
+    """Merge consecutive segments from the same speaker into one.
 
-    mic = left channel, monitor = right channel.
-    Returns float32 arrays for RMS calculations.
+    Handles both adjacent and overlapping segments.  Preserves word lists
+    by concatenation.
     """
-    with wave.open(str(stereo_wav), "rb") as wf:
-        if wf.getnchannels() != 2:
-            raise ValueError(f"Expected stereo WAV, got {wf.getnchannels()} channels")
-        sample_rate = wf.getframerate()
-        raw = wf.readframes(wf.getnframes())
+    if not segments:
+        return []
 
-    samples = np.frombuffer(raw, dtype=np.int16).reshape(-1, 2).astype(np.float32)
-    return samples[:, 0], samples[:, 1], sample_rate
+    result: list[Segment] = [segments[0]]
+    for seg in segments[1:]:
+        prev = result[-1]
+        if prev.speaker and prev.speaker == seg.speaker:
+            # Merge: extend previous segment
+            words = None
+            if prev.words and seg.words:
+                words = prev.words + seg.words
+            elif prev.words or seg.words:
+                words = prev.words or seg.words
+            result[-1] = Segment(
+                start=prev.start,
+                end=max(prev.end, seg.end),
+                text=prev.text + " " + seg.text,
+                words=words,
+                speaker=prev.speaker,
+            )
+        else:
+            result.append(seg)
 
-
-def classify_segment_by_channel(
-    start: float,
-    end: float,
-    mic: np.ndarray,
-    monitor: np.ndarray,
-    sample_rate: int,
-) -> str | None:
-    """Classify a time segment as 'mic', 'monitor', or None (ambiguous).
-
-    Compares RMS energy on mic vs monitor channel for the given time range.
-    Returns 'mic' if mic_rms > monitor_rms * 2, 'monitor' if vice versa, else None.
-    """
-    start_frame = max(0, min(int(start * sample_rate), len(mic)))
-    end_frame = max(0, min(int(end * sample_rate), len(mic)))
-
-    if end_frame <= start_frame:
-        return None
-
-    mic_rms = float(np.sqrt(np.mean(mic[start_frame:end_frame] ** 2)))
-    monitor_rms = float(np.sqrt(np.mean(monitor[start_frame:end_frame] ** 2)))
-
-    epsilon = 1e-10
-    if mic_rms > (monitor_rms + epsilon) * 2.0:
-        return "mic"
-    if monitor_rms > (mic_rms + epsilon) * 2.0:
-        return "monitor"
-    return None
-
-
-def identify_user_speaker(
-    diarization_segments: list[DiarizationSegment],
-    stereo_wav: Path,
-) -> str | None:
-    """Determine which pyannote speaker is the user (mic channel).
-
-    Compares RMS energy on mic (left) vs monitor (right) channel
-    for each speaker's segments. The speaker with the highest
-    mic/monitor ratio is identified as the user.
-
-    Returns speaker ID (e.g. "SPEAKER_00") or None if ambiguous.
-    """
-    speakers = {seg.speaker for seg in diarization_segments}
-
-    if len(speakers) <= 1:
-        return None
-
-    with wave.open(str(stereo_wav), "rb") as wf:
-        if wf.getnchannels() != 2:
-            return None
-        sample_rate = wf.getframerate()
-        raw = wf.readframes(wf.getnframes())
-
-    samples = np.frombuffer(raw, dtype=np.int16).reshape(-1, 2).astype(np.float32)
-    mic_channel = samples[:, 0]  # left = mic
-    monitor_channel = samples[:, 1]  # right = monitor
-
-    epsilon = 1e-10
-    ratios: dict[str, float] = {}
-
-    for speaker in speakers:
-        speaker_segs = [s for s in diarization_segments if s.speaker == speaker]
-
-        mic_energy = 0.0
-        monitor_energy = 0.0
-        total_frames = 0
-
-        for seg in speaker_segs:
-            start_frame = max(0, min(int(seg.start * sample_rate), len(mic_channel)))
-            end_frame = max(0, min(int(seg.end * sample_rate), len(mic_channel)))
-
-            if end_frame <= start_frame:
-                continue
-
-            mic_energy += float(np.sum(mic_channel[start_frame:end_frame] ** 2))
-            monitor_energy += float(np.sum(monitor_channel[start_frame:end_frame] ** 2))
-            total_frames += end_frame - start_frame
-
-        if total_frames > 0:
-            mic_rms = (mic_energy / total_frames) ** 0.5
-            monitor_rms = (monitor_energy / total_frames) ** 0.5
-            ratios[speaker] = mic_rms / (monitor_rms + epsilon)
-
-    if not ratios:
-        return None
-
-    best_speaker = max(ratios, key=lambda s: ratios[s])
-    best_ratio = ratios[best_speaker]
-
-    # Require at least 2x difference to be confident
-    other_ratios = [r for s, r in ratios.items() if s != best_speaker]
-    if other_ratios and best_ratio < 2.0 * max(other_ratios):
-        return None
-
-    return best_speaker
+    return result
 
 
 def _speaker_spectral_profile(
@@ -440,10 +212,10 @@ def _speaker_spectral_profile(
     Focuses on the 100-4000 Hz range which contains voice formant information.
     Uses Hann-windowed FFT with 50 % overlap.
     """
-    n_fft = 2048
+    n_fft = const.SPECTRAL_FFT_SIZE
     freq_per_bin = sample_rate / n_fft
-    min_bin = max(1, int(100.0 / freq_per_bin))
-    max_bin = min(n_fft // 2 + 1, int(4000.0 / freq_per_bin) + 1)
+    min_bin = max(1, int(const.SPECTRAL_MIN_FREQ_HZ / freq_per_bin))
+    max_bin = min(n_fft // 2 + 1, int(const.SPECTRAL_MAX_FREQ_HZ / freq_per_bin) + 1)
     n_bins = max_bin - min_bin
 
     if n_bins <= 0:
@@ -483,11 +255,16 @@ def merge_similar_speakers(
     multiple speakers.  Uses power-spectrum cosine similarity in the 100-4000 Hz
     voice frequency range.
 
-    Default threshold 0.96 is a compromise: merges only near-identical profiles
-    (over-segmented single speaker, cosine ~0.98-0.99) while preserving distinct
-    voices from the same channel (cosine ~0.92-0.95).  Power-spectrum similarity
-    is a weak signal for voice identity — the channel frequency response dominates.
-    Set to 0 to disable, or raise to 0.98+ for stricter merging.
+    Two-tier thresholds:
+    - Standard merge (similarity_threshold, default 0.96): merges near-identical
+      profiles (over-segmented single speaker, cosine ~0.98-0.99).
+    - Minor speaker absorption (MINOR_SPEAKER_MERGE_THRESHOLD = 0.92): when one
+      speaker has very little speech (< 15s and < 20% of dominant), they are likely
+      echo/crosstalk artifacts with unreliable spectral profiles. A lower threshold
+      absorbs them into the dominant speaker.
+
+    Power-spectrum similarity is a weak signal for voice identity — the channel
+    frequency response dominates. Set to 0 to disable.
     """
     if similarity_threshold <= 0:
         return diarization_segments
@@ -495,6 +272,13 @@ def merge_similar_speakers(
     speakers = sorted({seg.speaker for seg in diarization_segments})
     if len(speakers) <= 1:
         return diarization_segments
+
+    # Total speech per speaker (for minor speaker detection)
+    total_speech: dict[str, float] = {}
+    for speaker in speakers:
+        total_speech[speaker] = sum(
+            s.end - s.start for s in diarization_segments if s.speaker == speaker
+        )
 
     profiles: dict[str, np.ndarray] = {}
     for speaker in speakers:
@@ -514,11 +298,24 @@ def merge_similar_speakers(
 
             norm_a = float(np.linalg.norm(a_profile))
             norm_b = float(np.linalg.norm(b_profile))
-            if norm_a < 1e-10 or norm_b < 1e-10:
+            if norm_a < const.CHANNEL_EPSILON or norm_b < const.CHANNEL_EPSILON:
                 continue
 
             similarity = float(np.dot(a_profile, b_profile) / (norm_a * norm_b))
-            if similarity >= similarity_threshold:
+
+            # Use lower threshold when one speaker is a minor artifact
+            # (little speech both absolutely and relative to the dominant speaker)
+            threshold = similarity_threshold
+            minor_total = min(total_speech[sp_a], total_speech[sp_b])
+            major_total = max(total_speech[sp_a], total_speech[sp_b])
+            if (
+                minor_total < MINOR_SPEAKER_MAX_SEC
+                and major_total > 0
+                and minor_total / major_total < MINOR_SPEAKER_RATIO
+            ):
+                threshold = MINOR_SPEAKER_MERGE_THRESHOLD
+
+            if similarity >= threshold:
                 target = merge_map[sp_b]
                 canonical = merge_map[sp_a]
                 for s in speakers:
@@ -538,6 +335,83 @@ def merge_similar_speakers(
     ]
 
 
+def _find_speaker_for_time(
+    start: float,
+    end: float,
+    diarization_segments: list[DiarizationSegment],
+) -> str | None:
+    """Find the pyannote speaker with most overlap for a time range."""
+    best_speaker = None
+    best_overlap = 0.0
+
+    for dseg in diarization_segments:
+        overlap = max(0.0, min(end, dseg.end) - max(start, dseg.start))
+        if overlap > best_overlap:
+            best_overlap = overlap
+            best_speaker = dseg.speaker
+
+    # No overlap — find nearest segment
+    if best_speaker is None:
+        mid = (start + end) / 2
+        min_dist = float("inf")
+        for dseg in diarization_segments:
+            dist = min(abs(mid - dseg.start), abs(mid - dseg.end))
+            if dist < min_dist:
+                min_dist = dist
+                best_speaker = dseg.speaker
+
+    return best_speaker
+
+
+def _resegment_by_words(
+    segment: Segment,
+    diarization_segments: list[DiarizationSegment],
+) -> list[tuple[Segment, str | None]]:
+    """Split a segment into sub-segments at diarization speaker boundaries.
+
+    Each word is assigned to its pyannote speaker.  Consecutive words from the
+    same speaker are grouped into one sub-segment.  Returns list of
+    (sub_segment, pyannote_speaker) tuples.
+    """
+    if not segment.words:
+        speaker = _find_speaker_for_time(segment.start, segment.end, diarization_segments)
+        return [(segment, speaker)]
+
+    # Assign each word to a pyannote speaker
+    word_speakers: list[tuple[str | None, int]] = []
+    for i, word in enumerate(segment.words):
+        speaker = _find_speaker_for_time(word.start, word.end, diarization_segments)
+        word_speakers.append((speaker, i))
+
+    # Group consecutive same-speaker words into sub-segments
+    result: list[tuple[Segment, str | None]] = []
+    group_start = 0
+
+    for i in range(1, len(word_speakers) + 1):
+        if i < len(word_speakers) and word_speakers[i][0] == word_speakers[group_start][0]:
+            continue
+
+        # Flush group [group_start, i)
+        group_words = segment.words[group_start:i]
+        speaker = word_speakers[group_start][0]
+        text = "".join(w.word for w in group_words).strip()
+        if text:
+            result.append(
+                (
+                    Segment(
+                        start=group_words[0].start,
+                        end=group_words[-1].end,
+                        text=text,
+                        words=group_words,
+                    ),
+                    speaker,
+                )
+            )
+        group_start = i
+
+    return result if result else [(segment, None)]
+
+
 def assign_speakers(
     segments: list[Segment],
     diarization_segments: list[DiarizationSegment],
@@ -545,6 +419,9 @@ def assign_speakers(
     stereo_wav: Path | None = None,
 ) -> list[Segment]:
     """Assign speaker labels to each Segment based on channel energy + pyannote.
+
+    For segments with word timestamps, splits at diarization speaker boundaries
+    so that words from different speakers become separate segments.
 
     When stereo_wav is provided, per-segment channel energy determines
     "You" (mic-dominant) vs "Others" (monitor-dominant). Ambiguous segments
@@ -574,80 +451,48 @@ def assign_speakers(
         None → let pyannote + user_speaker decide.
         """
         if channel_verdict == "mic":
-            return "You"
+            return const.SPEAKER_YOU
         non_user = [s for s in speaker_order if s != user_speaker]
         if channel_verdict is None and user_speaker and pyannote_speaker == user_speaker:
-            return "You"
+            return const.SPEAKER_YOU
         if pyannote_speaker in non_user:
             idx = non_user.index(pyannote_speaker) + 1
         else:
             idx = len(non_user) + 1
-        return f"Speaker {idx}"
-
-    def find_speaker_for_time(start: float, end: float) -> str | None:
-        best_speaker = None
-        best_overlap = 0.0
-
-        for dseg in diarization_segments:
-            overlap = max(0.0, min(end, dseg.end) - max(start, dseg.start))
-            if overlap > best_overlap:
-                best_overlap = overlap
-                best_speaker = dseg.speaker
-
-        # No overlap — find nearest segment
-        if best_speaker is None:
-            mid = (start + end) / 2
-            min_dist = float("inf")
-            for dseg in diarization_segments:
-                dist = min(abs(mid - dseg.start), abs(mid - dseg.end))
-                if dist < min_dist:
-                    min_dist = dist
-                    best_speaker = dseg.speaker
-
-        return best_speaker
+        return const.SPEAKER_LABEL_FMT.format(idx)
 
     result = []
     for seg in segments:
-        # Step 1: determine pyannote speaker
-        if seg.words:
-            speaker_votes: dict[str, int] = {}
-            for word in seg.words:
-                speaker = find_speaker_for_time(word.start, word.end)
-                if speaker:
-                    speaker_votes[speaker] = speaker_votes.get(speaker, 0) + 1
+        # Split segment at diarization boundaries (word-level)
+        sub_segments = _resegment_by_words(seg, diarization_segments)
 
-            pyannote_speaker = (
-                max(speaker_votes, key=lambda s: speaker_votes[s]) if speaker_votes else None
+        for sub_seg, pyannote_speaker in sub_segments:
+            if pyannote_speaker and pyannote_speaker not in speaker_order:
+                speaker_order.append(pyannote_speaker)
+
+            # Channel-based override if stereo data available
+            channel = None
+            if stereo_data is not None:
+                mic, monitor, sr = stereo_data
+                channel = classify_segment_by_channel(sub_seg.start, sub_seg.end, mic, monitor, sr)
+
+            if pyannote_speaker:
+                label = get_label(pyannote_speaker, channel_verdict=channel)
+            elif channel == "mic":
+                label = const.SPEAKER_YOU
+            elif channel == "monitor":
+                label = const.SPEAKER_LABEL_FMT.format(1)
+            else:
+                label = None
+
+            result.append(
+                Segment(
+                    start=sub_seg.start,
+                    end=sub_seg.end,
+                    text=sub_seg.text,
+                    words=sub_seg.words,
+                    speaker=label,
+                )
             )
-        else:
-            pyannote_speaker = find_speaker_for_time(seg.start, seg.end)
-
-        if pyannote_speaker and pyannote_speaker not in speaker_order:
-            speaker_order.append(pyannote_speaker)
-
-        # Step 2: channel-based override if stereo data available
-        channel = None
-        if stereo_data is not None:
-            mic, monitor, sr = stereo_data
-            channel = classify_segment_by_channel(seg.start, seg.end, mic, monitor, sr)
-
-        if pyannote_speaker:
-            label = get_label(pyannote_speaker, channel_verdict=channel)
-        elif channel == "mic":
-            label = "You"
-        elif channel == "monitor":
-            label = "Speaker 1"
-        else:
-            label = None
-
-        result.append(
-            Segment(
-                start=seg.start,
-                end=seg.end,
-                text=seg.text,
-                words=seg.words,
-                speaker=label,
-            )
-        )
 
     return result

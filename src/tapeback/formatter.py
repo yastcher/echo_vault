@@ -1,4 +1,8 @@
+from tapeback import const
 from tapeback.models import Segment
+
+# Words with probability below this are marked as uncertain (italic in markdown)
+WORD_LOW_CONFIDENCE = 0.5
 
 
 def _format_timecode(seconds: float) -> str:
@@ -69,17 +73,83 @@ def _merge_consecutive_speakers(
     return merged
 
 
+def _mark_low_confidence_words(segment: Segment) -> Segment:
+    """Create a new Segment with low-confidence words marked in italic.
+
+    Consecutive low-confidence words are grouped into a single italic span:
+    ``*Sorry could you* repeat`` instead of ``*Sorry* *could* *you* repeat``.
+    """
+    if not segment.words:
+        return segment
+
+    parts: list[str] = []
+    low_group: list[str] = []
+
+    for word in segment.words:
+        text = word.word.strip()
+        if not text:
+            continue
+        if word.probability < WORD_LOW_CONFIDENCE:
+            low_group.append(text)
+        else:
+            if low_group:
+                parts.append(f"*{' '.join(low_group)}*")
+                low_group = []
+            parts.append(text)
+
+    if low_group:
+        parts.append(f"*{' '.join(low_group)}*")
+
+    if not parts:
+        return segment
+
+    return Segment(
+        start=segment.start,
+        end=segment.end,
+        text=" ".join(parts),
+        words=segment.words,
+        speaker=segment.speaker,
+    )
+
+
+def _format_segments_block(segments: list[Segment]) -> list[str]:
+    """Format a list of segments into timecoded markdown lines.
+
+    Low-confidence words (probability < 0.5) are marked with *italics*.
+    """
+    long_enough = [s for s in segments if s.end - s.start >= const.MIN_SEGMENT_DURATION]
+    long_enough = [_mark_low_confidence_words(s) for s in long_enough]
+    merged = _merge_consecutive_speakers(long_enough)
+
+    lines: list[str] = []
+    for start_time, speaker, text in merged:
+        timecode = _format_timecode(start_time)
+
+        if speaker:
+            lines.append(f"{timecode} **{speaker}:** {text}")
+        else:
+            lines.append(f"{timecode} {text}")
+        lines.append("")
+
+    return lines
+
+
 def format_markdown(
     segments: list[Segment],
     session_name: str,
     audio_rel_path: str,
     duration_seconds: float,
     language: str,
+    raw_segments: list[Segment] | None = None,
 ) -> str:
     """Generate markdown with YAML front matter.
 
     Segments shorter than 1 second are filtered out (VAD artifacts).
     Each segment starts with [HH:MM:SS] timecode.
+
+    When raw_segments is provided, outputs two sections:
+    - "## Transcript" with raw (pre-diarization) segments
+    - "## Diarized Transcript" with diarized segments
     """
     # Parse date and time from session name (format: YYYY-MM-DD_HH-MM-SS)
     parts = session_name.split("_")
@@ -111,16 +181,16 @@ def format_markdown(
         "",
     ]
 
-    # Merge consecutive segments from the same speaker
-    merged = _merge_consecutive_speakers([s for s in segments if s.end - s.start >= 1.0])
-
-    for start_time, speaker, text in merged:
-        timecode = _format_timecode(start_time)
-
-        if speaker:
-            lines.append(f"{timecode} **{speaker}:** {text}")
-        else:
-            lines.append(f"{timecode} {text}")
+    if raw_segments is not None:
+        lines.append("## Transcript")
         lines.append("")
+        lines.extend(_format_segments_block(raw_segments))
+        lines.append("---")
+        lines.append("")
+        lines.append("## Diarized Transcript")
+        lines.append("")
+        lines.extend(_format_segments_block(segments))
+    else:
+        lines.extend(_format_segments_block(segments))
 
     return "\n".join(lines)

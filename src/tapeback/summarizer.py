@@ -8,6 +8,7 @@ from pathlib import Path
 
 import click
 
+from tapeback import const
 from tapeback.models import ActionItem, Summary
 from tapeback.settings import DEFAULT_MODELS, Settings
 
@@ -15,6 +16,15 @@ _SYSTEM_PROMPT = """\
 You analyze meeting transcripts and extract structured information.
 
 You MUST respond with valid JSON only. No markdown, no explanation, no preamble.
+
+The transcript may contain two sections:
+- "## Transcript" — raw speech recognition output with basic You/Other channel attribution. \
+This text is more reliable.
+- "## Diarized Transcript" — same text with detailed speaker identification \
+(Speaker 1, Speaker 2, etc.), but speaker labels may be inaccurate due to audio crosstalk.
+
+Use the raw transcript for accurate text content. \
+Use the diarized transcript for speaker attribution when it seems consistent.
 
 JSON schema:
 {
@@ -55,11 +65,11 @@ _PROVIDER_ENV_VARS: dict[str, str] = {
 }
 
 _OPENAI_COMPATIBLE_BASE_URLS: dict[str, str] = {
-    "groq": "https://api.groq.com/openai/v1",
-    "gemini": "https://generativelanguage.googleapis.com/v1beta/openai/",
-    "openrouter": "https://openrouter.ai/api/v1",
-    "deepseek": "https://api.deepseek.com",
-    "qwen": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+    "groq": const.API_BASE_GROQ,
+    "gemini": const.API_BASE_GEMINI,
+    "openrouter": const.API_BASE_OPENROUTER,
+    "deepseek": const.API_BASE_DEEPSEEK,
+    "qwen": const.API_BASE_QWEN,
 }
 
 _FALLBACK_CHAIN: list[str] = [

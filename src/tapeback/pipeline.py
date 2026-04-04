@@ -6,17 +6,21 @@ import tempfile
 from collections.abc import Callable
 from pathlib import Path
 
+from tapeback import const
 from tapeback.audio import convert_to_mono16k, get_channel_count, merge_channels, split_channels_16k
+from tapeback.channel import (
+    classify_segment_by_channel,
+    filter_silent_segments,
+    identify_user_speaker,
+    load_stereo_channels,
+    split_on_silence,
+)
 from tapeback.diarizer import (
     Diarizer,
     assign_speakers,
     diarization_available,
-    filter_silent_segments,
-    identify_user_speaker,
-    load_stereo_channels,
     merge_channel_segments,
     merge_similar_speakers,
-    split_on_silence,
 )
 from tapeback.formatter import format_markdown
 from tapeback.models import Segment
@@ -56,7 +60,7 @@ def stop_and_process(
     audio_dest = save_audio_to_vault(stereo_path, settings, session_name)
     on_status(f"Audio saved: {audio_dest}")
 
-    segments, info = process_stereo_file(
+    segments, info, raw_segments = process_stereo_file(
         stereo_path, output_dir, settings, diarize=diarize, on_status=on_status
     )
 
@@ -68,6 +72,7 @@ def stop_and_process(
         audio_rel_path=audio_rel_path,
         duration_seconds=float(info.get("duration", 0.0)),
         language=str(info.get("language", settings.language)),
+        raw_segments=raw_segments,
     )
 
     md_path = save_markdown_to_vault(markdown, settings, session_name)
@@ -100,11 +105,11 @@ def process_file(
 
     if is_stereo(audio_path):
         on_status("Stereo file detected, using dual-channel pipeline...")
-        segments, info = process_stereo_file(
+        segments, info, raw_segments = process_stereo_file(
             audio_path, tmp_dir, settings, diarize=diarize, on_status=on_status
         )
     else:
-        segments, info = process_mono_file(
+        segments, info, raw_segments = process_mono_file(
             audio_path, tmp_dir, settings, diarize=diarize, on_status=on_status
         )
 
@@ -116,6 +121,7 @@ def process_file(
         audio_rel_path=audio_rel_path,
         duration_seconds=float(info.get("duration", 0.0)),
         language=str(info.get("language", settings.language)),
+        raw_segments=raw_segments,
     )
 
     md_path = save_markdown_to_vault(markdown, settings, name)
@@ -144,8 +150,12 @@ def process_stereo_file(
     *,
     diarize: bool,
     on_status: StatusCallback = _noop_status,
-) -> tuple[list[Segment], dict[str, str | float]]:
-    """Process a stereo WAV through the dual-channel pipeline."""
+) -> tuple[list[Segment], dict[str, str | float], list[Segment]]:
+    """Process a stereo WAV through the dual-channel pipeline.
+
+    Returns (diarized_segments, info, raw_segments).
+    raw_segments have basic You/Other attribution (channel-based, no diarization).
+    """
     from tapeback.transcriber import Transcriber  # noqa: PLC0415 — 10s import, must stay lazy
 
     mic_raw, monitor_raw, raw_sr = load_stereo_channels(stereo_path)
@@ -167,6 +177,20 @@ def process_stereo_file(
 
     mic_segments = filter_silent_segments(mic_segments, mic_raw, raw_sr)
     monitor_segments = filter_silent_segments(monitor_segments, monitor_raw, raw_sr)
+
+    # Drop mic segments where monitor is louder (headphone bleed, not real speech)
+    mic_segments = [
+        s
+        for s in mic_segments
+        if classify_segment_by_channel(s.start, s.end, mic_raw, monitor_raw, raw_sr) != "monitor"
+    ]
+
+    # Raw transcript: basic channel attribution only (You vs Other)
+    raw_monitor = [
+        Segment(start=s.start, end=s.end, text=s.text, words=s.words, speaker=const.SPEAKER_OTHER)
+        for s in monitor_segments
+    ]
+    raw_segments = merge_channel_segments(mic_segments, raw_monitor)
 
     del transcriber
     free_gpu_memory()
@@ -199,13 +223,13 @@ def process_stereo_file(
                 end=s.end,
                 text=s.text,
                 words=s.words,
-                speaker="Other",
+                speaker=const.SPEAKER_OTHER,
             )
             for s in monitor_segments
         ]
 
     segments = merge_channel_segments(mic_segments, monitor_segments)
-    return segments, info
+    return segments, info, raw_segments
 
 
 def process_mono_file(
@@ -215,8 +239,11 @@ def process_mono_file(
     *,
     diarize: bool,
     on_status: StatusCallback = _noop_status,
-) -> tuple[list[Segment], dict[str, str | float]]:
-    """Process a mono/non-stereo audio file through the single-channel pipeline."""
+) -> tuple[list[Segment], dict[str, str | float], list[Segment]]:
+    """Process a mono/non-stereo audio file through the single-channel pipeline.
+
+    Returns (diarized_segments, info, raw_segments).
+    """
     from tapeback.transcriber import Transcriber  # noqa: PLC0415 — 10s import, must stay lazy
 
     on_status("Converting audio...")
@@ -225,6 +252,9 @@ def process_mono_file(
     on_status("Transcribing (this may take a few minutes)...")
     transcriber = Transcriber(settings)
     segments, info = transcriber.transcribe(mono_16k_path)
+
+    # Raw transcript before diarization
+    raw_segments = list(segments)
 
     del transcriber
     free_gpu_memory()
@@ -239,7 +269,7 @@ def process_mono_file(
         on_status=on_status,
     )
 
-    return segments, info
+    return segments, info, raw_segments
 
 
 def free_gpu_memory() -> None:
