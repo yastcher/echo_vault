@@ -5,11 +5,19 @@ All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.8.10] — 2026-04-03
+## [0.8.10] — 2026-04-04
 
 ### Fixed
 - Speaker misattribution: words from one monitor speaker assigned to another; switched from whole-segment majority vote to word-level diarization split
 - Interleaved single-word segments during simultaneous speech; consecutive same-speaker segments now consolidated
+- False extra speaker from echo/crosstalk: minor speakers (< 15s and < 20% of dominant) absorbed with lower merge threshold (0.92)
+- Headphone bleed falsely attributed to "You": crosstalk filter drops mic segments where monitor channel is louder
+
+### Added
+- Two-section transcript output: raw Whisper transcript (## Transcript) then diarized (## Diarized Transcript) for comparison
+- Low-confidence word marking: Whisper words with probability < 0.5 shown in *italics*
+- VRAM pre-check before diarization: skips CUDA when free VRAM < 1500 MiB to avoid slow OOM fallback
+- Decomposed `diarizer.py` into `diarizer.py` + `channel.py` for channel-related utilities
 
 ### Changed
 - `TAPEBACK_CHUNK_LENGTH` default lowered from `15` to `2` for finer VAD granularity
