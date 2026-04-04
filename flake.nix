@@ -29,6 +29,7 @@
         # Convenience wrappers — run via uvx, NOT reproducible Nix packages.
         # Require network access on first run to fetch from PyPI.
         #   nix run github:yastcher/tapeback            # base
+        #   nix run github:yastcher/tapeback#tray       # + system tray icon
         #   nix run github:yastcher/tapeback#llm        # + summaries
         #   nix run github:yastcher/tapeback#diarize    # + speaker diarization
         #   nix run github:yastcher/tapeback#full       # everything
@@ -39,9 +40,10 @@
           '';
         in {
           default  = mkWrapper "";
+          tray     = mkWrapper "[tray]";
           llm      = mkWrapper "[llm]";
           diarize  = mkWrapper "[diarize]";
-          full     = mkWrapper "[llm,diarize]";
+          full     = mkWrapper "[tray,llm,diarize]";
         };
       }
     );

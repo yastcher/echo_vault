@@ -323,6 +323,12 @@ If you find tapeback useful, consider a small donation:
 | <img src="docs/qr-usdt.png" width="180"> | <img src="docs/qr-ada.png" width="180"> |
 | `TAECw9FebnoSN2n3H2Fk9Bv5aA8fwpCuBB` | `addr1q9tqg2g8wxpxawsrvea84lms3ampuda0ygzawuxq77sxwr48mxj2vq2rzd4nsmhpdhy6lftp30tz78tetzr29mtvkqmsskrmp7` |
 
+## Links
+
+- [Changelog](CHANGELOG.md)
+- [Deploy](DEPLOY.md)
+- [CI/CD](.github/workflows/)
+
 ## License
 
 Apache-2.0. See [LICENSE](LICENSE).
