@@ -142,7 +142,7 @@ class Transcriber:
                 self._fallback_to_cpu()
                 segments_iter, info = self._model.transcribe(
                     str(audio_path),
-                    language=self._settings.language,
+                    language=language,
                     beam_size=self._settings.beam_size,
                     vad_filter=self._settings.vad_filter,
                     chunk_length=self._settings.chunk_length,

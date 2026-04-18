@@ -31,7 +31,7 @@ def test_settings_defaults(tmp_vault):
     """Default settings should match expected values."""
     s = Settings(vault_path=tmp_vault)
     assert s.whisper_model == "large-v3-turbo"
-    assert s.language == "en"
+    assert s.language == "auto"
     assert s.device == "cuda"
     assert s.compute_type == "auto"
     assert s.beam_size == 5

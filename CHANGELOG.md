@@ -15,7 +15,11 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `TAPEBACK_LIVE_OVERLAP` setting (default `2.0`) — seconds of overlap between chunks for seamless transitions
 - `TAPEBACK_LIVE_MIN_CHUNK` setting (default `5.0`) — minimum new audio (seconds) before triggering a transcription cycle
 
+### Fixed
+- CPU fallback lost auto language detection: passed `"auto"` string to Whisper instead of `None`, causing errors on non-English transcripts
+
 ### Changed
+- Default language changed from `en` to `auto` — Whisper now auto-detects the spoken language
 - `tapeback start` now detects when recording stops (e.g. via `tapeback stop`) using a polling loop instead of `signal.pause()`
 
 ## [0.8.10] — 2026-04-04

@@ -260,7 +260,7 @@ All settings via environment variables (prefix `TAPEBACK_`) or
 | Variable | Default | Description |
 |---|---|---|
 | `TAPEBACK_WHISPER_MODEL` | `large-v3-turbo` | Whisper model (`tiny`, `base`, `small`, `medium`, `large-v3-turbo`) |
-| `TAPEBACK_LANGUAGE` | `en` | Transcription language code |
+| `TAPEBACK_LANGUAGE` | `auto` | Language code (`auto` for auto-detection, or `en`, `ru`, `fr`, etc.) |
 | `TAPEBACK_DEVICE` | `cuda` | `cuda` or `cpu` |
 | `TAPEBACK_COMPUTE_TYPE` | `auto` | `auto`, `float16`, `int8`, or `float32` (`auto` picks `int8` when free VRAM < 4 GiB) |
 | `TAPEBACK_BEAM_SIZE` | `5` | Whisper beam search width |

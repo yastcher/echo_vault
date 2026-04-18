@@ -42,7 +42,7 @@ class Settings(BaseSettings):
 
     # Whisper
     whisper_model: str = "large-v3-turbo"
-    language: str = "en"
+    language: str = "auto"
     device: str = "cuda"
     compute_type: str = "auto"  # "int8"/"float16"
     beam_size: int = 5
