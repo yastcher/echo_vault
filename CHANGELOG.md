@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.0] — 2026-04-18
+
+### Added
+- Live transcription: Whisper transcribes audio in real-time during recording, writing a live markdown file to the vault that can be opened mid-meeting
+- `--no-live` CLI flag to disable live transcription and use the old post-recording-only mode
+- `TAPEBACK_LIVE` setting (default `true`) — enable/disable live transcription
+- `TAPEBACK_LIVE_INTERVAL` setting (default `60`) — seconds between transcription cycles
+- `TAPEBACK_LIVE_OVERLAP` setting (default `2.0`) — seconds of overlap between chunks for seamless transitions
+- `TAPEBACK_LIVE_MIN_CHUNK` setting (default `5.0`) — minimum new audio (seconds) before triggering a transcription cycle
+
+### Changed
+- `tapeback start` now detects when recording stops (e.g. via `tapeback stop`) using a polling loop instead of `signal.pause()`
+
 ## [0.8.10] — 2026-04-04
 
 ### Fixed

@@ -67,6 +67,12 @@ class Settings(BaseSettings):
     # Post-processing
     pause_threshold: float = 1.0  # seconds — split segments on word gaps >= this
 
+    # Live transcription
+    live: bool = True  # enable live transcription during recording
+    live_interval: int = 60  # seconds between transcription cycles
+    live_overlap: float = 2.0  # seconds of overlap between chunks
+    live_min_chunk: float = 5.0  # minimum new audio (seconds) to trigger transcription
+
     # Summarization
     summarize: bool = True
     llm_provider: LLMProvider = "anthropic"

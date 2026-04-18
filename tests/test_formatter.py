@@ -1,8 +1,8 @@
 """Formatter tests — markdown generation and vault I/O pipelines."""
 
-from tapeback.formatter import _mark_low_confidence_words, format_markdown
+from tapeback.formatter import _mark_low_confidence_words, format_live_markdown, format_markdown
 from tapeback.models import Segment, Word
-from tapeback.vault import save_to_vault
+from tapeback.vault import remove_live_markdown, save_live_markdown, save_to_vault
 
 
 def test_format_markdown_pipeline():
@@ -239,3 +239,70 @@ def test_mark_low_confidence_words_no_words():
 
     result = _mark_low_confidence_words(segment)
     assert result.text == "No words here."
+
+
+# --- format_live_markdown ---
+
+
+def test_format_live_markdown_with_segments():
+    """Live markdown should include segments with timecodes and speaker labels."""
+    segments = [
+        Segment(start=1.0, end=5.0, text="Hello there.", speaker="You"),
+        Segment(start=5.0, end=10.0, text="Hi, how are you?", speaker="Other"),
+    ]
+
+    result = format_live_markdown(
+        segments=segments,
+        session_name="2026-04-18_14-30-00",
+        language="en",
+    )
+
+    assert "# Live Transcript 2026-04-18 14:30" in result
+    assert "recording in progress" in result
+    assert "**You:** Hello there." in result
+    assert "**Other:** Hi, how are you?" in result
+    assert "Final transcript with diarization" in result
+    # No YAML front matter
+    assert "---\ndate:" not in result
+    assert "duration:" not in result
+
+
+def test_format_live_markdown_empty_segments():
+    """Live markdown with no segments shows waiting message."""
+    result = format_live_markdown(
+        segments=[],
+        session_name="2026-04-18_14-30-00",
+        language="en",
+    )
+
+    assert "Waiting for first transcription cycle" in result
+    assert "# Live Transcript" in result
+
+
+# --- save_live_markdown / remove_live_markdown ---
+
+
+def test_save_live_markdown_creates_and_overwrites(settings, tmp_vault):
+    """save_live_markdown should create the file and overwrite on subsequent calls."""
+    path1 = save_live_markdown("# First", settings, "test-session")
+    assert path1.exists()
+    assert path1.read_text() == "# First"
+    assert path1.name == "test-session_live.md"
+
+    # Overwrites, not unique suffix
+    path2 = save_live_markdown("# Second", settings, "test-session")
+    assert path2 == path1
+    assert path2.read_text() == "# Second"
+
+
+def test_remove_live_markdown(settings, tmp_vault):
+    """remove_live_markdown should delete the file without error."""
+    save_live_markdown("# Content", settings, "test-session")
+    md_path = tmp_vault / "meetings" / "test-session_live.md"
+    assert md_path.exists()
+
+    remove_live_markdown(settings, "test-session")
+    assert not md_path.exists()
+
+    # Should not raise on missing file
+    remove_live_markdown(settings, "test-session")

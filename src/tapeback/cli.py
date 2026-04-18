@@ -1,6 +1,6 @@
 import shutil
-import signal
 import subprocess
+import time
 from pathlib import Path
 
 import click
@@ -41,12 +41,18 @@ def cli() -> None:
 @click.argument("name", required=False)
 @click.option("--no-diarize", is_flag=True, help="Skip speaker diarization")
 @click.option("--no-summarize", is_flag=True, help="Skip LLM summarization")
-def start(name: str | None, no_diarize: bool, no_summarize: bool) -> None:
+@click.option("--no-live", is_flag=True, help="Disable live transcription during recording")
+def start(name: str | None, no_diarize: bool, no_summarize: bool, no_live: bool) -> None:
     """Start recording monitor source + microphone.
 
     Records system audio (what you hear) and microphone (what you say)
     into a stereo WAV file. Runs in foreground — press Ctrl+C to stop,
     transcribe, and save to vault.
+
+    \b
+    By default, live transcription runs in the background — you can open
+    the live markdown file during recording to see what's been said.
+    Use --no-live to disable this and transcribe only after stopping.
 
     \b
     Optionally provide a NAME for the output file:
@@ -62,28 +68,43 @@ def start(name: str | None, no_diarize: bool, no_summarize: bool) -> None:
     click.echo(f"Recording started: {session_name}", err=True)
     click.echo(f"Monitor: {monitor}", err=True)
     click.echo(f"Mic: {mic}", err=True)
+
+    live_transcriber = None
+    if settings.live and not no_live:
+        from tapeback.live import LiveTranscriber
+
+        mic_path = Path(const.TEMP_DIR) / session_name / const.FILE_MIC
+        monitor_path = Path(const.TEMP_DIR) / session_name / const.FILE_MONITOR
+        live_transcriber = LiveTranscriber(settings, session_name, mic_path, monitor_path)
+        live_transcriber.start()
+        click.echo(f"Live transcript: {live_transcriber.live_md_path}", err=True)
+
     click.echo("Run 'tapeback stop' to finish and transcribe.", err=True)
     click.echo("Or press Ctrl+C to stop and transcribe now.", err=True)
 
     try:
-        signal.pause()
+        while recorder.is_recording():
+            time.sleep(1)
     except KeyboardInterrupt:
-        click.echo("\nStopping...", err=True)
-        try:
-            from tapeback.pipeline import stop_and_process
+        pass
 
-            stop_and_process(
-                recorder,
-                settings,
-                diarize=not no_diarize,
-                do_summarize=not no_summarize,
-                on_status=_echo_status,
-            )
-        except KeyboardInterrupt:
-            click.echo(
-                f"\nAborted during processing. Audio files kept in {const.TEMP_DIR}/",
-                err=True,
-            )
+    click.echo("\nStopping...", err=True)
+    try:
+        from tapeback.pipeline import stop_and_process
+
+        stop_and_process(
+            recorder,
+            settings,
+            live_transcriber=live_transcriber,
+            diarize=not no_diarize,
+            do_summarize=not no_summarize,
+            on_status=_echo_status,
+        )
+    except KeyboardInterrupt:
+        click.echo(
+            f"\nAborted during processing. Audio files kept in {const.TEMP_DIR}/",
+            err=True,
+        )
 
 
 @cli.command()

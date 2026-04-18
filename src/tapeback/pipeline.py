@@ -1,10 +1,16 @@
 """Processing pipeline shared between CLI and tray."""
 
+from __future__ import annotations
+
 import gc
 import shutil
 import tempfile
 from collections.abc import Callable
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from tapeback.live import LiveTranscriber
 
 from tapeback import const
 from tapeback.audio import convert_to_mono16k, get_channel_count, merge_channels, split_channels_16k
@@ -27,7 +33,7 @@ from tapeback.models import Segment
 from tapeback.recorder import Recorder
 from tapeback.settings import Settings
 from tapeback.summarizer import maybe_summarize
-from tapeback.vault import save_audio_to_vault, save_markdown_to_vault
+from tapeback.vault import remove_live_markdown, save_audio_to_vault, save_markdown_to_vault
 
 StatusCallback = Callable[[str], None]
 
@@ -40,14 +46,22 @@ def stop_and_process(
     recorder: Recorder,
     settings: Settings,
     *,
+    live_transcriber: LiveTranscriber | None = None,
     diarize: bool = True,
     do_summarize: bool = True,
     on_status: StatusCallback = _noop_status,
 ) -> Path:
     """Stop recording and run the full dual-channel processing pipeline.
 
+    If a live_transcriber is active, stops it first to free GPU memory
+    before the full pipeline creates its own Whisper model.
+
     Returns path to the saved markdown file.
     """
+    if live_transcriber is not None:
+        on_status("Stopping live transcription...")
+        live_transcriber.stop()
+
     on_status("Stopping recording...")
     monitor_path, mic_path = recorder.stop()
 
@@ -77,6 +91,9 @@ def stop_and_process(
 
     md_path = save_markdown_to_vault(markdown, settings, session_name)
     on_status(f"Saved: {md_path}")
+
+    if live_transcriber is not None:
+        remove_live_markdown(settings, session_name)
 
     if do_summarize:
         _maybe_summarize(md_path, settings, on_status)

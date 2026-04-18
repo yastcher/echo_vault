@@ -54,3 +54,29 @@ def test_settings_hf_token_from_env(monkeypatch, tmp_path):
 
     s = Settings()
     assert s.hf_token == "hf_test_token_123"
+
+
+def test_settings_live_defaults(tmp_vault):
+    """Live transcription settings should have correct defaults."""
+    s = Settings(vault_path=tmp_vault)
+    assert s.live is True
+    assert s.live_interval == 60
+    assert s.live_overlap == 2.0
+    assert s.live_min_chunk == 5.0
+
+
+def test_settings_live_from_env(monkeypatch, tmp_path):
+    """Live settings should be configurable via environment variables."""
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    monkeypatch.setenv("TAPEBACK_VAULT_PATH", str(vault))
+    monkeypatch.setenv("TAPEBACK_LIVE", "false")
+    monkeypatch.setenv("TAPEBACK_LIVE_INTERVAL", "30")
+    monkeypatch.setenv("TAPEBACK_LIVE_OVERLAP", "3.0")
+    monkeypatch.setenv("TAPEBACK_LIVE_MIN_CHUNK", "10.0")
+
+    s = Settings()
+    assert s.live is False
+    assert s.live_interval == 30
+    assert s.live_overlap == 3.0
+    assert s.live_min_chunk == 10.0

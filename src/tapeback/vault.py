@@ -63,6 +63,28 @@ def save_markdown_to_vault(
     return md_dest
 
 
+def save_live_markdown(markdown: str, settings: Settings, session_name: str) -> Path:
+    """Write live transcript to vault, overwriting on each update.
+
+    Uses atomic write (temp file + rename) to prevent Obsidian from reading
+    a half-written file.
+    """
+    meetings_dir = settings.vault_path / settings.meetings_dir
+    meetings_dir.mkdir(parents=True, exist_ok=True)
+
+    md_path = meetings_dir / f"{session_name}_live.md"
+    tmp_path = md_path.with_suffix(".md.tmp")
+    tmp_path.write_text(markdown, encoding="utf-8")
+    tmp_path.rename(md_path)
+    return md_path
+
+
+def remove_live_markdown(settings: Settings, session_name: str) -> None:
+    """Remove the live transcript file (superseded by final version)."""
+    md_path = settings.vault_path / settings.meetings_dir / f"{session_name}_live.md"
+    md_path.unlink(missing_ok=True)
+
+
 def save_to_vault(
     markdown: str,
     stereo_wav: Path,

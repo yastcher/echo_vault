@@ -194,3 +194,41 @@ def format_markdown(
         lines.extend(_format_segments_block(segments))
 
     return "\n".join(lines)
+
+
+def format_live_markdown(
+    segments: list[Segment],
+    session_name: str,
+    language: str,
+) -> str:
+    """Generate a simplified live markdown transcript (no duration, no raw_segments).
+
+    Updated atomically during recording so the user can open it mid-meeting.
+    Replaced by the final polished transcript after recording stops.
+    """
+    parts = session_name.split("_")
+    date_str = parts[0] if parts else session_name
+    time_str = parts[1].replace("-", ":") if len(parts) > 1 else "00:00"
+    time_display = ":".join(time_str.split(":")[:2])
+
+    lines = [
+        f"# Live Transcript {date_str} {time_display}",
+        "",
+        f"**Language:** {language} | **Status:** recording in progress",
+        "",
+        "---",
+        "",
+    ]
+
+    if segments:
+        lines.extend(_format_segments_block(segments))
+    else:
+        lines.append("*Waiting for first transcription cycle...*")
+        lines.append("")
+
+    lines.append("---")
+    lines.append("")
+    lines.append("*Live preview. Final transcript with diarization will replace this file.*")
+    lines.append("")
+
+    return "\n".join(lines)

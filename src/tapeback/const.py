@@ -51,6 +51,11 @@ CHANNEL_DURATION_DIFF_WARN = 2.0
 # Minimum segment duration for output (seconds)
 MIN_SEGMENT_DURATION = 1.0
 
+# Live transcription
+FILE_LIVE_SUFFIX = "_live"
+WAV_HEADER_FALLBACK = 44
+RESAMPLE_FACTOR = 3  # 48000 / 16000
+
 # API base URLs for LLM providers
 API_BASE_GROQ = "https://api.groq.com/openai/v1"
 API_BASE_GEMINI = "https://generativelanguage.googleapis.com/v1beta/openai/"
