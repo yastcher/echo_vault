@@ -1,5 +1,7 @@
 """Live transcription — background thread that transcribes audio during recording."""
 
+from __future__ import annotations
+
 import struct
 import sys
 import threading
