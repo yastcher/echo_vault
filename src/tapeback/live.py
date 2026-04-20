@@ -12,9 +12,10 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from tapeback import const
+from tapeback._gpu import free_gpu_memory
+from tapeback._lazy import load_transcriber
 from tapeback.formatter import format_live_markdown
 from tapeback.models import Segment, Word
-from tapeback.pipeline import free_gpu_memory
 from tapeback.settings import Settings
 from tapeback.vault import save_live_markdown
 
@@ -190,15 +191,9 @@ class LiveTranscriber:
             free_gpu_memory()
 
     def _ensure_transcriber(self) -> Transcriber:
-        """Lazily create the Transcriber (loads Whisper model).
-
-        Local import is required: transcriber imports torch/faster_whisper (~10s)
-        and must not block the main thread at module load time.
-        """
+        """Lazily create the Transcriber (loads Whisper model)."""
         if self._transcriber is None:
-            from tapeback.transcriber import Transcriber as _Transcriber  # noqa: PLC0415
-
-            self._transcriber = _Transcriber(self._settings)
+            self._transcriber = load_transcriber(self._settings)
         return self._transcriber
 
     def _transcription_loop(self) -> None:

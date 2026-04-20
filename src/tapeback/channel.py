@@ -68,6 +68,112 @@ def filter_silent_segments(
     return result
 
 
+def _compute_window_rms(
+    mic_samples: np.ndarray,
+    monitor_samples: np.ndarray | None,
+    sf: int,
+    ef: int,
+    sample_rate: int,
+    window_samples: int,
+) -> tuple[list[tuple[float, float]], list[float]]:
+    """Compute per-window RMS for mic (with timestamps) and optional monitor channel."""
+    mic_rms_values: list[tuple[float, float]] = []
+    monitor_rms_values: list[float] = []
+
+    for i in range(sf, ef, window_samples):
+        end_i = min(i + window_samples, ef)
+        chunk = mic_samples[i:end_i]
+        rms = float(np.sqrt(np.mean(chunk.astype(np.float64) ** 2)))
+        mic_rms_values.append((i / sample_rate, rms))
+
+        if monitor_samples is not None:
+            ms = max(0, min(i, len(monitor_samples)))
+            me = max(0, min(end_i, len(monitor_samples)))
+            if me > ms:
+                mon_rms = float(np.sqrt(np.mean(monitor_samples[ms:me].astype(np.float64) ** 2)))
+            else:
+                mon_rms = 0.0
+            monitor_rms_values.append(mon_rms)
+
+    return mic_rms_values, monitor_rms_values
+
+
+def _find_split_points(
+    mic_rms_values: list[tuple[float, float]],
+    monitor_rms_values: list[float],
+    pause_threshold: float,
+    seg_end: float,
+) -> list[float]:
+    """Find split points where mic is silent for >= pause_threshold seconds."""
+    all_rms = [r for _, r in mic_rms_values]
+    adaptive_threshold = float(np.median(all_rms)) * const.SILENCE_ADAPTIVE_FACTOR
+
+    silence_start: float | None = None
+    split_points: list[float] = []
+
+    for idx, (t, mic_rms) in enumerate(mic_rms_values):
+        is_quiet = mic_rms < adaptive_threshold
+
+        if not is_quiet and monitor_rms_values:
+            mon_rms = monitor_rms_values[idx]
+            if mon_rms > 0 and mic_rms < mon_rms * const.SILENCE_MONITOR_FACTOR:
+                is_quiet = True
+
+        if is_quiet:
+            if silence_start is None:
+                silence_start = t
+        elif silence_start is not None:
+            silence_dur = t - silence_start
+            if silence_dur >= pause_threshold:
+                split_points.append(silence_start + silence_dur / 2)
+            silence_start = None
+
+    if silence_start is not None:
+        silence_dur = seg_end - silence_start
+        if silence_dur >= pause_threshold:
+            split_points.append(silence_start + silence_dur / 2)
+
+    return split_points
+
+
+def _build_sub_segments(seg: Segment, split_points: list[float]) -> list[Segment]:
+    """Build sub-segments from a segment and its internal split points."""
+    boundaries = [seg.start, *split_points, seg.end]
+    result: list[Segment] = []
+
+    for i in range(len(boundaries) - 1):
+        sub_start = boundaries[i]
+        sub_end = boundaries[i + 1]
+
+        if seg.words:
+            sub_words = [
+                w for w in seg.words if w.start >= sub_start - 0.05 and w.end <= sub_end + 0.05
+            ]
+            if not sub_words:
+                continue
+            result.append(
+                Segment(
+                    start=sub_words[0].start,
+                    end=sub_words[-1].end,
+                    text=" ".join(w.word.strip() for w in sub_words),
+                    words=sub_words,
+                    speaker=seg.speaker,
+                )
+            )
+        elif sub_end - sub_start >= const.MIN_SUB_SEGMENT_DURATION_SEC:
+            result.append(
+                Segment(
+                    start=sub_start,
+                    end=sub_end,
+                    text=seg.text,
+                    words=None,
+                    speaker=seg.speaker,
+                )
+            )
+
+    return result
+
+
 def split_on_silence(
     segments: list[Segment],
     mic_samples: np.ndarray,
@@ -85,8 +191,7 @@ def split_on_silence(
 
     A contiguous silent region >= pause_threshold seconds triggers a split.
     """
-    window_dur = const.SILENCE_WINDOW_SEC
-    window_samples = int(window_dur * sample_rate)
+    window_samples = int(const.SILENCE_WINDOW_SEC * sample_rate)
     result: list[Segment] = []
 
     for seg in segments:
@@ -97,101 +202,23 @@ def split_on_silence(
             result.append(seg)
             continue
 
-        # Compute mic RMS per window
-        mic_rms_values: list[tuple[float, float]] = []  # (time, rms)
-        monitor_rms_values: list[float] = []
-
-        for i in range(sf, ef, window_samples):
-            end_i = min(i + window_samples, ef)
-            chunk = mic_samples[i:end_i]
-            rms = float(np.sqrt(np.mean(chunk.astype(np.float64) ** 2)))
-            t = i / sample_rate
-            mic_rms_values.append((t, rms))
-
-            if monitor_samples is not None:
-                ms = max(0, min(i, len(monitor_samples)))
-                me = max(0, min(end_i, len(monitor_samples)))
-                if me > ms:
-                    mon_rms = float(
-                        np.sqrt(np.mean(monitor_samples[ms:me].astype(np.float64) ** 2))
-                    )
-                else:
-                    mon_rms = 0.0
-                monitor_rms_values.append(mon_rms)
+        mic_rms_values, monitor_rms_values = _compute_window_rms(
+            mic_samples, monitor_samples, sf, ef, sample_rate, window_samples
+        )
 
         if not mic_rms_values:
             result.append(seg)
             continue
 
-        # Adaptive threshold: 40% of median mic RMS within this segment
-        all_rms = [r for _, r in mic_rms_values]
-        median_rms = float(np.median(all_rms))
-        adaptive_threshold = median_rms * const.SILENCE_ADAPTIVE_FACTOR
-
-        # Detect silent windows
-        silence_start: float | None = None
-        split_points: list[float] = []
-
-        for idx, (t, mic_rms) in enumerate(mic_rms_values):
-            is_quiet = mic_rms < adaptive_threshold
-
-            # Monitor-relative check: mic is much quieter than monitor
-            if not is_quiet and monitor_rms_values:
-                mon_rms = monitor_rms_values[idx]
-                if mon_rms > 0 and mic_rms < mon_rms * const.SILENCE_MONITOR_FACTOR:
-                    is_quiet = True
-
-            if is_quiet:
-                if silence_start is None:
-                    silence_start = t
-            elif silence_start is not None:
-                silence_dur = t - silence_start
-                if silence_dur >= pause_threshold:
-                    split_points.append(silence_start + silence_dur / 2)
-                silence_start = None
-
-        # Check trailing silence
-        if silence_start is not None:
-            silence_dur = seg.end - silence_start
-            if silence_dur >= pause_threshold:
-                split_points.append(silence_start + silence_dur / 2)
+        split_points = _find_split_points(
+            mic_rms_values, monitor_rms_values, pause_threshold, seg.end
+        )
 
         if not split_points:
             result.append(seg)
             continue
 
-        # Build sub-segments
-        boundaries = [seg.start, *split_points, seg.end]
-        for i in range(len(boundaries) - 1):
-            sub_start = boundaries[i]
-            sub_end = boundaries[i + 1]
-
-            if seg.words:
-                sub_words = [
-                    w for w in seg.words if w.start >= sub_start - 0.05 and w.end <= sub_end + 0.05
-                ]
-                if not sub_words:
-                    continue
-                result.append(
-                    Segment(
-                        start=sub_words[0].start,
-                        end=sub_words[-1].end,
-                        text=" ".join(w.word.strip() for w in sub_words),
-                        words=sub_words,
-                        speaker=seg.speaker,
-                    )
-                )
-            # No words — keep the sub-segment with original text proportioned
-            elif sub_end - sub_start >= const.MIN_SUB_SEGMENT_DURATION_SEC:
-                result.append(
-                    Segment(
-                        start=sub_start,
-                        end=sub_end,
-                        text=seg.text,
-                        words=None,
-                        speaker=seg.speaker,
-                    )
-                )
+        result.extend(_build_sub_segments(seg, split_points))
 
     return result
 

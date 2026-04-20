@@ -1,5 +1,8 @@
 from pathlib import Path
 
+import pytest
+from pydantic import ValidationError
+
 from tapeback.settings import Settings
 
 
@@ -89,3 +92,37 @@ def test_settings_live_from_env(monkeypatch, vault_env):
     assert s.live_interval == 30
     assert s.live_overlap == 3.0
     assert s.live_min_chunk == 10.0
+
+
+# --- Validation ---
+
+
+def test_spectral_merge_threshold_out_of_range_rejected(tmp_vault):
+    with pytest.raises(ValidationError):
+        Settings(vault_path=tmp_vault, spectral_merge_threshold=1.5)
+    with pytest.raises(ValidationError):
+        Settings(vault_path=tmp_vault, spectral_merge_threshold=-0.1)
+
+
+def test_clustering_threshold_out_of_range_rejected(tmp_vault):
+    with pytest.raises(ValidationError):
+        Settings(vault_path=tmp_vault, clustering_threshold=1.5)
+    with pytest.raises(ValidationError):
+        Settings(vault_path=tmp_vault, clustering_threshold=-0.1)
+
+
+def test_negative_pause_threshold_rejected(tmp_vault):
+    with pytest.raises(ValidationError):
+        Settings(vault_path=tmp_vault, pause_threshold=-1.0)
+
+
+def test_live_min_chunk_gt_interval_rejected(tmp_vault):
+    """live_min_chunk > live_interval would starve the live transcription loop."""
+    with pytest.raises(ValidationError, match="live_min_chunk"):
+        Settings(vault_path=tmp_vault, live=True, live_interval=10, live_min_chunk=30.0)
+
+
+def test_live_min_chunk_gt_interval_allowed_when_live_disabled(tmp_vault):
+    """The chunk/interval check only applies when live transcription is enabled."""
+    s = Settings(vault_path=tmp_vault, live=False, live_interval=10, live_min_chunk=30.0)
+    assert s.live is False

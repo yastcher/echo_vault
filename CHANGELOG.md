@@ -20,8 +20,6 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `TAPEBACK_LIVE_INTERVAL` setting (default `60`) — seconds between transcription cycles
 - `TAPEBACK_LIVE_OVERLAP` setting (default `2.0`) — seconds of overlap between chunks for seamless transitions
 - `TAPEBACK_LIVE_MIN_CHUNK` setting (default `5.0`) — minimum new audio (seconds) before triggering a transcription cycle
-
-### Added
 - `TAPEBACK_NO_SPEECH_THRESHOLD` setting (default `0.4`) — Whisper silence-rejection threshold; lower values suppress training-data hallucinations like "Субтитры DimaTorzok" on long pauses
 
 ### Fixed
@@ -30,6 +28,8 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Whisper hallucinations on long pauses (e.g. "Субтитры DimaTorzok", "Продолжение следует") — `no_speech_threshold` now set to `0.4` (stricter than Whisper's default `0.6`)
 
 ### Changed
+- Settings now fail-fast on invalid values: thresholds must be in `[0, 1]`, `pause_threshold` / `live_overlap` must be non-negative, `live_interval` / `live_min_chunk` must be positive, and `live_min_chunk` must be ≤ `live_interval` when live transcription is enabled — surfaced via `pydantic.ValidationError` at `get_settings()` instead of silent mis-behaviour deep in the pipeline
+- Internal refactor: extracted `tapeback._gpu` (CUDA memory helper), `tapeback._lazy` (single lazy-load site for `Transcriber`), and `tapeback.speaker_merge` (spectral clustering) — no user-visible change, but `diarizer.py` and `channel.py` are now under the 500-line limit and no longer need `PLR0912` / `PLR0915` ignores
 - Default language changed from `en` to `auto` — Whisper now auto-detects the spoken language
 - `tapeback start` now detects when recording stops (e.g. via `tapeback stop`) using a polling loop instead of `signal.pause()`
 - `TAPEBACK_CHUNK_LENGTH` default raised from `2` to `7`: 2-second chunks fragment Whisper's context and cause hallucinations and broken sentences on non-English speech; `7` balances context against hallucination risk on long pauses

@@ -89,11 +89,16 @@ fixable = ["ALL"]
 max-args = 6  # Settings + 5 domain args is a common shape in this codebase
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**/*.py" = ["S101", "S105", "S106", "PLR2004"]  # assert, fake tokens, magic values in assertions
-"src/tapeback/cli.py" = ["PLC0415"]         # lazy imports for heavy ML deps
-"src/tapeback/channel.py" = ["PLR0912", "PLR0915"]  # complex audio analysis algorithms
-"src/tapeback/diarizer.py" = ["PLC0415", "PLR0912", "PLR0915"]  # lazy ML imports, complex audio algorithms
-"src/tapeback/summarizer.py" = ["PLC0415"]  # lazy imports for optional LLM SDKs
+# Tests: pytest idioms (bare assert, fake tokens, magic values in assertions).
+"tests/**/*.py" = ["S101", "S105", "S106", "PLR2004"]
+# Lazy imports to keep CLI startup (--help, status) free of ~10s ML model load
+# (faster_whisper/torch are pulled in transitively from pipeline/live/tray).
+"src/tapeback/cli.py" = ["PLC0415"]
+# pyannote.audio + torch are `[diarize]` extras — must import inside functions
+# so users without the extra don't get ImportError on module load.
+"src/tapeback/diarizer.py" = ["PLC0415"]
+# anthropic/openai are `[llm]` extras — same lazy-import rationale as diarizer.
+"src/tapeback/summarizer.py" = ["PLC0415"]
 
 [tool.ruff.lint.isort]
 known-local-folder = ["tapeback", "tests"]

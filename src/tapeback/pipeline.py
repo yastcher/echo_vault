@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import gc
 import shutil
 import tempfile
 from collections.abc import Callable
@@ -13,6 +12,8 @@ if TYPE_CHECKING:
     from tapeback.live import LiveTranscriber
 
 from tapeback import const
+from tapeback._gpu import free_gpu_memory
+from tapeback._lazy import load_transcriber
 from tapeback.audio import convert_to_mono16k, get_channel_count, merge_channels, split_channels_16k
 from tapeback.channel import (
     classify_segment_by_channel,
@@ -174,15 +175,13 @@ def process_stereo_file(
     Returns (diarized_segments, info, raw_segments).
     raw_segments have basic You/Other attribution (channel-based, no diarization).
     """
-    from tapeback.transcriber import Transcriber  # noqa: PLC0415 — 10s import, must stay lazy
-
     mic_raw, monitor_raw, raw_sr = load_stereo_channels(stereo_path)
 
     on_status("Splitting channels...")
     mic_16k, monitor_16k = split_channels_16k(stereo_path, output_dir)
 
     on_status("Transcribing (this may take a few minutes)...")
-    transcriber = Transcriber(settings)
+    transcriber = load_transcriber(settings)
     mic_segments, monitor_segments, info = transcriber.transcribe_stereo(mic_16k, monitor_16k)
 
     mic_segments = split_on_silence(
@@ -263,13 +262,11 @@ def process_mono_file(
 
     Returns (diarized_segments, info, raw_segments).
     """
-    from tapeback.transcriber import Transcriber  # noqa: PLC0415 — 10s import, must stay lazy
-
     on_status("Converting audio...")
     mono_16k_path = convert_to_mono16k(audio_path, output_dir)
 
     on_status("Transcribing (this may take a few minutes)...")
-    transcriber = Transcriber(settings)
+    transcriber = load_transcriber(settings)
     segments, info = transcriber.transcribe(mono_16k_path)
 
     # Raw transcript before diarization
@@ -293,18 +290,6 @@ def process_mono_file(
     # diarization — use identity to tell whether the raw section is a duplicate.
     diarized = segments is not segments_before
     return segments, info, raw_segments if diarized else None
-
-
-def free_gpu_memory() -> None:
-    """Free GPU memory so diarizer can use CUDA."""
-    gc.collect()
-    try:
-        import torch  # noqa: PLC0415 — optional dependency, guarded by try/except
-
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-    except ImportError:
-        pass
 
 
 def _maybe_diarize_segments(

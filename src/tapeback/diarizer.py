@@ -11,15 +11,19 @@ from tapeback import const
 from tapeback.channel import classify_segment_by_channel, load_stereo_channels
 from tapeback.models import DiarizationSegment, Segment
 from tapeback.settings import Settings
+from tapeback.speaker_merge import merge_similar_speakers
 
 # pyannote segmentation + embedding models need ~1-1.5 GB VRAM during inference
 DIARIZATION_VRAM_MIN_MIB = 1500
 
-# Minor speaker absorption: speakers with very little speech are likely
-# echo/crosstalk artifacts.  Use a lower merge threshold for them.
-MINOR_SPEAKER_MAX_SEC = 15.0  # absolute: speaker with < 15s is potentially minor
-MINOR_SPEAKER_RATIO = 0.2  # relative: must have < 20% of the dominant speaker's speech
-MINOR_SPEAKER_MERGE_THRESHOLD = 0.92  # lower cosine for absorbing minor speakers
+__all__ = [
+    "Diarizer",
+    "assign_speakers",
+    "consolidate_segments",
+    "diarization_available",
+    "merge_channel_segments",
+    "merge_similar_speakers",
+]
 
 
 def _get_free_vram_mib() -> int | None:
@@ -202,140 +206,6 @@ def consolidate_segments(segments: list[Segment]) -> list[Segment]:
     return result
 
 
-def _speaker_spectral_profile(
-    monitor_samples: np.ndarray,
-    sample_rate: int,
-    diarization_segments: list[DiarizationSegment],
-    speaker: str,
-) -> np.ndarray:
-    """Compute average power spectrum for a speaker's segments.
-
-    Focuses on the 100-4000 Hz range which contains voice formant information.
-    Uses Hann-windowed FFT with 50 % overlap.
-    """
-    n_fft = const.SPECTRAL_FFT_SIZE
-    freq_per_bin = sample_rate / n_fft
-    min_bin = max(1, int(const.SPECTRAL_MIN_FREQ_HZ / freq_per_bin))
-    max_bin = min(n_fft // 2 + 1, int(const.SPECTRAL_MAX_FREQ_HZ / freq_per_bin) + 1)
-    n_bins = max_bin - min_bin
-
-    if n_bins <= 0:
-        return np.zeros(1)
-
-    window = np.hanning(n_fft)
-    spectra: list[np.ndarray] = []
-
-    for seg in diarization_segments:
-        if seg.speaker != speaker:
-            continue
-        sf = max(0, int(seg.start * sample_rate))
-        ef = min(len(monitor_samples), int(seg.end * sample_rate))
-        chunk = monitor_samples[sf:ef]
-
-        hop = n_fft // 2
-        for start in range(0, len(chunk) - n_fft, hop):
-            frame = chunk[start : start + n_fft].astype(np.float64)
-            spectrum = np.abs(np.fft.rfft(frame * window))[min_bin:max_bin]
-            spectra.append(spectrum)
-
-    if not spectra:
-        return np.zeros(n_bins)
-    result: np.ndarray = np.mean(spectra, axis=0)
-    return result
-
-
-def merge_similar_speakers(
-    diarization_segments: list[DiarizationSegment],
-    monitor_samples: np.ndarray,
-    sample_rate: int,
-    similarity_threshold: float = 0.95,
-) -> list[DiarizationSegment]:
-    """Merge pyannote speakers with similar spectral profiles.
-
-    Fixes over-segmentation where a single speaker is incorrectly split into
-    multiple speakers.  Uses power-spectrum cosine similarity in the 100-4000 Hz
-    voice frequency range.
-
-    Two-tier thresholds:
-    - Standard merge (similarity_threshold, default 0.96): merges near-identical
-      profiles (over-segmented single speaker, cosine ~0.98-0.99).
-    - Minor speaker absorption (MINOR_SPEAKER_MERGE_THRESHOLD = 0.92): when one
-      speaker has very little speech (< 15s and < 20% of dominant), they are likely
-      echo/crosstalk artifacts with unreliable spectral profiles. A lower threshold
-      absorbs them into the dominant speaker.
-
-    Power-spectrum similarity is a weak signal for voice identity — the channel
-    frequency response dominates. Set to 0 to disable.
-    """
-    if similarity_threshold <= 0:
-        return diarization_segments
-
-    speakers = sorted({seg.speaker for seg in diarization_segments})
-    if len(speakers) <= 1:
-        return diarization_segments
-
-    # Total speech per speaker (for minor speaker detection)
-    total_speech: dict[str, float] = {}
-    for speaker in speakers:
-        total_speech[speaker] = sum(
-            s.end - s.start for s in diarization_segments if s.speaker == speaker
-        )
-
-    profiles: dict[str, np.ndarray] = {}
-    for speaker in speakers:
-        profiles[speaker] = _speaker_spectral_profile(
-            monitor_samples, sample_rate, diarization_segments, speaker
-        )
-
-    merge_map: dict[str, str] = {s: s for s in speakers}
-
-    for i, sp_a in enumerate(speakers):
-        for sp_b in speakers[i + 1 :]:
-            if merge_map[sp_a] == merge_map[sp_b]:
-                continue
-
-            a_profile = profiles[sp_a]
-            b_profile = profiles[sp_b]
-
-            norm_a = float(np.linalg.norm(a_profile))
-            norm_b = float(np.linalg.norm(b_profile))
-            if norm_a < const.CHANNEL_EPSILON or norm_b < const.CHANNEL_EPSILON:
-                continue
-
-            similarity = float(np.dot(a_profile, b_profile) / (norm_a * norm_b))
-
-            # Use lower threshold when one speaker is a minor artifact
-            # (little speech both absolutely and relative to the dominant speaker)
-            threshold = similarity_threshold
-            minor_total = min(total_speech[sp_a], total_speech[sp_b])
-            major_total = max(total_speech[sp_a], total_speech[sp_b])
-            if (
-                minor_total < MINOR_SPEAKER_MAX_SEC
-                and major_total > 0
-                and minor_total / major_total < MINOR_SPEAKER_RATIO
-            ):
-                threshold = MINOR_SPEAKER_MERGE_THRESHOLD
-
-            if similarity >= threshold:
-                target = merge_map[sp_b]
-                canonical = merge_map[sp_a]
-                for s in speakers:
-                    if merge_map[s] == target:
-                        merge_map[s] = canonical
-
-    if all(merge_map[s] == s for s in speakers):
-        return diarization_segments
-
-    return [
-        DiarizationSegment(
-            speaker=merge_map[seg.speaker],
-            start=seg.start,
-            end=seg.end,
-        )
-        for seg in diarization_segments
-    ]
-
-
 def _find_speaker_for_time(
     start: float,
     end: float,
@@ -413,6 +283,45 @@ def _resegment_by_words(
     return result if result else [(segment, None)]
 
 
+def _resolve_speaker_label(
+    pyannote_speaker: str,
+    channel: str | None,
+    speaker_order: list[str],
+    user_speaker: str | None,
+) -> str:
+    """Pick a display label for a pyannote speaker, honouring channel override."""
+    if channel == "mic":
+        return const.SPEAKER_YOU
+    non_user = [s for s in speaker_order if s != user_speaker]
+    if channel is None and user_speaker and pyannote_speaker == user_speaker:
+        return const.SPEAKER_YOU
+    if pyannote_speaker in non_user:
+        idx = non_user.index(pyannote_speaker) + 1
+    else:
+        idx = len(non_user) + 1
+    return const.SPEAKER_LABEL_FMT.format(idx)
+
+
+def _classify_sub_segment(
+    sub_seg: Segment,
+    stereo_data: tuple[np.ndarray, np.ndarray, int] | None,
+) -> str | None:
+    """Classify a sub-segment by channel energy, or None if no stereo data."""
+    if stereo_data is None:
+        return None
+    mic, monitor, sr = stereo_data
+    return classify_segment_by_channel(sub_seg.start, sub_seg.end, mic, monitor, sr)
+
+
+def _label_from_channel_only(channel: str | None) -> str | None:
+    """Fallback label when pyannote couldn't assign a speaker for a sub-segment."""
+    if channel == "mic":
+        return const.SPEAKER_YOU
+    if channel == "monitor":
+        return const.SPEAKER_LABEL_FMT.format(1)
+    return None
+
+
 def assign_speakers(
     segments: list[Segment],
     diarization_segments: list[DiarizationSegment],
@@ -437,54 +346,26 @@ def assign_speakers(
     if not diarization_segments:
         return list(segments)
 
-    # Load stereo data once (not N times)
     stereo_data: tuple[np.ndarray, np.ndarray, int] | None = None
     if stereo_wav is not None:
         with contextlib.suppress(ValueError, wave.Error):
             stereo_data = load_stereo_channels(stereo_wav)
 
     speaker_order: list[str] = []
+    result: list[Segment] = []
 
-    def get_label(pyannote_speaker: str, channel_verdict: str | None = None) -> str:
-        """Get display label for a speaker.
-
-        channel_verdict: 'mic' → force "You", 'monitor' → force non-You,
-        None → let pyannote + user_speaker decide.
-        """
-        if channel_verdict == "mic":
-            return const.SPEAKER_YOU
-        non_user = [s for s in speaker_order if s != user_speaker]
-        if channel_verdict is None and user_speaker and pyannote_speaker == user_speaker:
-            return const.SPEAKER_YOU
-        if pyannote_speaker in non_user:
-            idx = non_user.index(pyannote_speaker) + 1
-        else:
-            idx = len(non_user) + 1
-        return const.SPEAKER_LABEL_FMT.format(idx)
-
-    result = []
     for seg in segments:
-        # Split segment at diarization boundaries (word-level)
-        sub_segments = _resegment_by_words(seg, diarization_segments)
-
-        for sub_seg, pyannote_speaker in sub_segments:
+        for sub_seg, pyannote_speaker in _resegment_by_words(seg, diarization_segments):
             if pyannote_speaker and pyannote_speaker not in speaker_order:
                 speaker_order.append(pyannote_speaker)
 
-            # Channel-based override if stereo data available
-            channel = None
-            if stereo_data is not None:
-                mic, monitor, sr = stereo_data
-                channel = classify_segment_by_channel(sub_seg.start, sub_seg.end, mic, monitor, sr)
-
+            channel = _classify_sub_segment(sub_seg, stereo_data)
             if pyannote_speaker:
-                label = get_label(pyannote_speaker, channel_verdict=channel)
-            elif channel == "mic":
-                label = const.SPEAKER_YOU
-            elif channel == "monitor":
-                label = const.SPEAKER_LABEL_FMT.format(1)
+                label: str | None = _resolve_speaker_label(
+                    pyannote_speaker, channel, speaker_order, user_speaker
+                )
             else:
-                label = None
+                label = _label_from_channel_only(channel)
 
             result.append(
                 Segment(
