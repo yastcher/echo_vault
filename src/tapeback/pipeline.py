@@ -154,7 +154,7 @@ def process_file(
 def is_stereo(audio_path: Path) -> bool:
     """Check if an audio file is a stereo WAV."""
     try:
-        return get_channel_count(audio_path) == 2
+        return get_channel_count(audio_path) == const.STEREO_CHANNELS
     except Exception:  # noqa: S110 — non-WAV or unreadable files are expected
         pass
     return False
@@ -347,7 +347,7 @@ def _maybe_diarize_segments(
 def _get_stereo_source(audio_path: Path) -> Path | None:
     """Return audio_path if it's a stereo WAV, else None."""
     try:
-        if get_channel_count(audio_path) == 2:
+        if get_channel_count(audio_path) == const.STEREO_CHANNELS:
             return audio_path
     except Exception:  # noqa: S110 — non-stereo or unreadable files are expected
         pass

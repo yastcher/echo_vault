@@ -45,11 +45,11 @@ def find_data_offset(path: Path) -> int:
                 return const.WAV_HEADER_FALLBACK
             # Scan sub-chunks until we find "data"
             while True:
-                chunk_id = f.read(4)
-                if len(chunk_id) < 4:
+                chunk_id = f.read(const.WAV_CHUNK_HEADER_BYTES)
+                if len(chunk_id) < const.WAV_CHUNK_HEADER_BYTES:
                     return const.WAV_HEADER_FALLBACK
-                chunk_size_bytes = f.read(4)
-                if len(chunk_size_bytes) < 4:
+                chunk_size_bytes = f.read(const.WAV_CHUNK_HEADER_BYTES)
+                if len(chunk_size_bytes) < const.WAV_CHUNK_HEADER_BYTES:
                     return const.WAV_HEADER_FALLBACK
                 if chunk_id == b"data":
                     return f.tell()

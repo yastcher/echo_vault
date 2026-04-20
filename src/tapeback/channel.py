@@ -182,7 +182,7 @@ def split_on_silence(
                     )
                 )
             # No words — keep the sub-segment with original text proportioned
-            elif sub_end - sub_start >= 0.5:
+            elif sub_end - sub_start >= const.MIN_SUB_SEGMENT_DURATION_SEC:
                 result.append(
                     Segment(
                         start=sub_start,
@@ -203,7 +203,7 @@ def load_stereo_channels(stereo_wav: Path) -> tuple[np.ndarray, np.ndarray, int]
     Returns float32 arrays for RMS calculations.
     """
     with wave.open(str(stereo_wav), "rb") as wf:
-        if wf.getnchannels() != 2:
+        if wf.getnchannels() != const.STEREO_CHANNELS:
             raise ValueError(f"Expected stereo WAV, got {wf.getnchannels()} channels")
         sample_rate = wf.getframerate()
         raw = wf.readframes(wf.getnframes())
@@ -258,7 +258,7 @@ def identify_user_speaker(
         return None
 
     with wave.open(str(stereo_wav), "rb") as wf:
-        if wf.getnchannels() != 2:
+        if wf.getnchannels() != const.STEREO_CHANNELS:
             return None
         sample_rate = wf.getframerate()
         raw = wf.readframes(wf.getnframes())

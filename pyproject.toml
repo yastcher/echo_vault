@@ -81,16 +81,16 @@ select = ["E", "W", "F", "I", "UP", "B", "G", "PLC", "PLR", "SIM", "S", "RUF"]
 ignore = [
     "S603",    # subprocess calls are safe (list-based, no shell)
     "S607",    # partial executable paths (ffmpeg, parecord) are intentional
-    "PLR2004", # magic numbers — too noisy for audio/test code
     "S108",    # /tmp/tapeback is intentional, secured with 0700 permissions
 ]
 fixable = ["ALL"]
 
+[tool.ruff.lint.pylint]
+max-args = 6  # Settings + 5 domain args is a common shape in this codebase
+
 [tool.ruff.lint.per-file-ignores]
-"tests/**/*.py" = ["S101", "S105", "S106"]  # assert, fake tokens in tests
+"tests/**/*.py" = ["S101", "S105", "S106", "PLR2004"]  # assert, fake tokens, magic values in assertions
 "src/tapeback/cli.py" = ["PLC0415"]         # lazy imports for heavy ML deps
-"src/tapeback/formatter.py" = ["PLR0913"]  # format_markdown takes many formatting params
-"src/tapeback/pipeline.py" = ["PLR0913"]  # pipeline functions take many params
 "src/tapeback/channel.py" = ["PLR0912", "PLR0915"]  # complex audio analysis algorithms
 "src/tapeback/diarizer.py" = ["PLC0415", "PLR0912", "PLR0915"]  # lazy ML imports, complex audio algorithms
 "src/tapeback/summarizer.py" = ["PLC0415"]  # lazy imports for optional LLM SDKs
