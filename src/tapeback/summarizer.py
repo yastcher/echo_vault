@@ -89,8 +89,10 @@ def _resolve_api_key_for_provider(provider: str, settings: Settings) -> str:
     For the primary provider (settings.llm_provider), checks TAPEBACK_LLM_API_KEY first.
     For all providers, checks provider-specific env var.
     """
-    if provider == settings.llm_provider and settings.llm_api_key:
-        return settings.llm_api_key
+    if provider == settings.llm_provider:
+        key = settings.llm_api_key.get_secret_value()
+        if key:
+            return key
 
     env_var = _PROVIDER_ENV_VARS.get(provider, "")
     return os.environ.get(env_var, "") if env_var else ""

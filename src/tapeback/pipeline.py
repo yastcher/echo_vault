@@ -30,7 +30,7 @@ from tapeback.diarizer import (
 )
 from tapeback.formatter import format_markdown
 from tapeback.models import Segment
-from tapeback.recorder import Recorder
+from tapeback.recorder import Recorder, validate_session_name
 from tapeback.settings import Settings
 from tapeback.summarizer import maybe_summarize
 from tapeback.vault import remove_live_markdown, save_audio_to_vault, save_markdown_to_vault
@@ -114,6 +114,7 @@ def process_file(
     """Process an existing audio file. Returns path to saved markdown."""
     if name is None:
         name = audio_path.stem
+    validate_session_name(name)
 
     audio_dest = save_audio_to_vault(audio_path, settings, name)
     on_status(f"Audio saved: {audio_dest}")
@@ -213,7 +214,7 @@ def process_stereo_file(
     free_gpu_memory()
 
     diarized = False
-    if diarize and settings.diarize and settings.hf_token:
+    if diarize and settings.diarize and settings.hf_token.get_secret_value():
         if not diarization_available():
             on_status(
                 "Warning: pyannote-audio not installed, skipping diarization. "
@@ -319,7 +320,7 @@ def _maybe_diarize_segments(
     if not diarize or not settings.diarize:
         return segments
 
-    if not settings.hf_token:
+    if not settings.hf_token.get_secret_value():
         on_status(
             "Warning: TAPEBACK_HF_TOKEN not set, skipping diarization. "
             "See README for setup instructions."

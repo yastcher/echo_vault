@@ -3,6 +3,7 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
+from pydantic import SecretStr
 
 from tapeback.models import ActionItem, Summary
 from tapeback.settings import DEFAULT_MODELS, Settings
@@ -160,7 +161,7 @@ def test_extract_transcript_no_meeting_header():
 def test_api_key_resolution_tapeback_env(tmp_vault, monkeypatch):
     """TAPEBACK_LLM_API_KEY takes priority over provider-specific env vars."""
     monkeypatch.setenv("ANTHROPIC_API_KEY", "provider-key")
-    settings = Settings(vault_path=tmp_vault, llm_api_key="tapeback-key")
+    settings = Settings(vault_path=tmp_vault, llm_api_key=SecretStr("tapeback-key"))
 
     assert _resolve_api_key(settings) == "tapeback-key"
 
@@ -169,7 +170,7 @@ def test_api_key_resolution_tapeback_env(tmp_vault, monkeypatch):
 def test_api_key_resolution_provider_env(tmp_vault, monkeypatch, provider, env_var):
     """Falls back to provider-specific env var when TAPEBACK_LLM_API_KEY is empty."""
     monkeypatch.setenv(env_var, "test-key")
-    settings = Settings(vault_path=tmp_vault, llm_provider=provider, llm_api_key="")
+    settings = Settings(vault_path=tmp_vault, llm_provider=provider, llm_api_key=SecretStr(""))
 
     assert _resolve_api_key(settings) == "test-key"
 
@@ -178,7 +179,7 @@ def test_api_key_missing_raises(tmp_vault, monkeypatch):
     """No key anywhere → RuntimeError with instructions."""
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    settings = Settings(vault_path=tmp_vault, llm_api_key="")
+    settings = Settings(vault_path=tmp_vault, llm_api_key=SecretStr(""))
 
     with pytest.raises(RuntimeError, match="No API key"):
         _resolve_api_key(settings)
@@ -209,7 +210,7 @@ def test_build_provider_chain_primary_first(tmp_vault, monkeypatch):
     """Primary provider appears first in chain."""
     clear_all_provider_env_vars(monkeypatch)
     settings = Settings(
-        vault_path=tmp_vault, llm_provider="groq", llm_api_key="main-key", llm_model=""
+        vault_path=tmp_vault, llm_provider="groq", llm_api_key=SecretStr("main-key"), llm_model=""
     )
 
     chain = _build_provider_chain(settings)
@@ -223,7 +224,9 @@ def test_build_provider_chain_includes_fallbacks(tmp_vault, monkeypatch):
     clear_all_provider_env_vars(monkeypatch)
     monkeypatch.setenv("GROQ_API_KEY", "groq-key")
     monkeypatch.setenv("GEMINI_API_KEY", "gemini-key")
-    settings = Settings(vault_path=tmp_vault, llm_provider="anthropic", llm_api_key="ant-key")
+    settings = Settings(
+        vault_path=tmp_vault, llm_provider="anthropic", llm_api_key=SecretStr("ant-key")
+    )
 
     chain = _build_provider_chain(settings)
 
@@ -234,7 +237,7 @@ def test_build_provider_chain_includes_fallbacks(tmp_vault, monkeypatch):
 def test_build_provider_chain_skips_providers_without_keys(tmp_vault, monkeypatch):
     """Providers without API keys are excluded from chain."""
     clear_all_provider_env_vars(monkeypatch)
-    settings = Settings(vault_path=tmp_vault, llm_provider="anthropic", llm_api_key="")
+    settings = Settings(vault_path=tmp_vault, llm_provider="anthropic", llm_api_key=SecretStr(""))
 
     chain = _build_provider_chain(settings)
 
@@ -248,7 +251,7 @@ def test_build_provider_chain_explicit_model_for_primary_only(tmp_vault, monkeyp
     settings = Settings(
         vault_path=tmp_vault,
         llm_provider="anthropic",
-        llm_api_key="ant-key",
+        llm_api_key=SecretStr("ant-key"),
         llm_model="claude-opus-4-20250514",
     )
 
@@ -296,7 +299,9 @@ def test_summarize_to_markdown_flow(summarize_settings):
 def test_summarize_openai_compatible_flow(tmp_vault, monkeypatch):
     """OpenAI-compatible provider flow: groq → openai SDK with custom base_url."""
     clear_all_provider_env_vars(monkeypatch)
-    settings = Settings(vault_path=tmp_vault, llm_provider="groq", llm_api_key="gsk-test-key")
+    settings = Settings(
+        vault_path=tmp_vault, llm_provider="groq", llm_api_key=SecretStr("gsk-test-key")
+    )
 
     mock_response = MagicMock()
     mock_response.choices = [MagicMock(message=MagicMock(content=VALID_LLM_RESPONSE))]
@@ -345,7 +350,9 @@ def test_provider_retry_and_fallback_flow(tmp_vault, monkeypatch):
     """Rate limit retry, provider fallback, all-fail, empty chain."""
     clear_all_provider_env_vars(monkeypatch)
     monkeypatch.setenv("GROQ_API_KEY", "groq-key")
-    settings = Settings(vault_path=tmp_vault, llm_provider="anthropic", llm_api_key="ant-key")
+    settings = Settings(
+        vault_path=tmp_vault, llm_provider="anthropic", llm_api_key=SecretStr("ant-key")
+    )
 
     # 429 on anthropic → retry with backoff → succeed on second attempt
     with (
@@ -384,7 +391,7 @@ def test_provider_retry_and_fallback_flow(tmp_vault, monkeypatch):
 
     # No providers at all → RuntimeError
     clear_all_provider_env_vars(monkeypatch)
-    no_key_settings = Settings(vault_path=tmp_vault, llm_api_key="")
+    no_key_settings = Settings(vault_path=tmp_vault, llm_api_key=SecretStr(""))
     with pytest.raises(RuntimeError, match="No LLM providers available"):
         _call_llm("system", "user", no_key_settings)
 
@@ -398,7 +405,10 @@ def test_maybe_summarize_end_to_end(tmp_vault, monkeypatch):
     md_file.write_text(SAMPLE_MD)
 
     settings_with_key = Settings(
-        vault_path=tmp_vault, summarize=True, llm_provider="anthropic", llm_api_key="sk-test"
+        vault_path=tmp_vault,
+        summarize=True,
+        llm_provider="anthropic",
+        llm_api_key=SecretStr("sk-test"),
     )
 
     # md_path=None → no-op
@@ -411,7 +421,7 @@ def test_maybe_summarize_end_to_end(tmp_vault, monkeypatch):
 
     # No API key → warning, file unchanged
     settings_no_key = Settings(
-        vault_path=tmp_vault, summarize=True, llm_provider="anthropic", llm_api_key=""
+        vault_path=tmp_vault, summarize=True, llm_provider="anthropic", llm_api_key=SecretStr("")
     )
     maybe_summarize(md_file, settings_no_key)
     assert "## Summary" not in md_file.read_text()

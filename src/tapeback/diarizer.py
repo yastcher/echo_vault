@@ -66,7 +66,8 @@ class Diarizer:
         Raises RuntimeError if hf_token is empty.
         Falls back to CPU if CUDA is not available.
         """
-        if not settings.hf_token:
+        hf_token = settings.hf_token.get_secret_value()
+        if not hf_token:
             raise RuntimeError(
                 "HuggingFace token required for diarization. "
                 "Set TAPEBACK_HF_TOKEN in your .env file."
@@ -77,7 +78,7 @@ class Diarizer:
         self._settings = settings
         pipeline = Pipeline.from_pretrained(
             const.PYANNOTE_MODEL,
-            token=settings.hf_token,
+            token=hf_token,
         )
         if pipeline is None:
             raise RuntimeError("Failed to load pyannote diarization pipeline")

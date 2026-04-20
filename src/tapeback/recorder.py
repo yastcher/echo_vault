@@ -25,6 +25,21 @@ class SessionData(TypedDict):
 
 _DEFAULT_STATE_DIR = Path.home() / ".local" / "state" / "tapeback"
 
+_SESSION_NAME_RE = re.compile(r"^[\w-]+$")
+
+
+def validate_session_name(session_name: str) -> None:
+    """Reject session names that could traverse the filesystem.
+
+    Only alphanumerics, dashes, and underscores are allowed — this keeps
+    names safe to use as path components in the vault.
+    """
+    if not _SESSION_NAME_RE.match(session_name):
+        raise ValueError(
+            f"Invalid session name: {session_name!r}. "
+            "Only alphanumerics, dashes, and underscores are allowed."
+        )
+
 
 def detect_devices(settings: Settings) -> tuple[str, str]:
     """Return (monitor_source, mic_source).
@@ -177,11 +192,8 @@ class Recorder:
 
         if session_name is None:
             session_name = datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%d_%H-%M-%S")
-        elif not re.match(r"^[\w-]+$", session_name):
-            raise ValueError(
-                f"Invalid session name: {session_name!r}. "
-                "Only alphanumerics, dashes, and underscores are allowed."
-            )
+        else:
+            validate_session_name(session_name)
 
         base_dir = Path(const.TEMP_DIR)
         base_dir.mkdir(parents=True, exist_ok=True, mode=0o700)

@@ -1,6 +1,7 @@
 from pathlib import Path
 from typing import Literal
 
+from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Default models per provider — used when TAPEBACK_LLM_MODEL is not set.
@@ -58,8 +59,8 @@ class Settings(BaseSettings):
     mic_source: str = "auto"
     sample_rate: int = 48000
 
-    # HuggingFace (for pyannote)
-    hf_token: str = ""
+    # HuggingFace (for pyannote). SecretStr prevents leakage in repr/str/model_dump.
+    hf_token: SecretStr = SecretStr("")
 
     # Diarization
     diarize: bool = True
@@ -79,7 +80,7 @@ class Settings(BaseSettings):
     # Summarization
     summarize: bool = True
     llm_provider: LLMProvider = "anthropic"
-    llm_api_key: str = ""
+    llm_api_key: SecretStr = SecretStr("")
     llm_model: str = ""
 
 

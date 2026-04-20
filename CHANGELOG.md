@@ -5,7 +5,13 @@ All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.9.0] — 2026-04-19
+## [0.9.0] — 2026-04-20
+
+### Security
+- `hf_token` and `llm_api_key` now stored as `pydantic.SecretStr` — prevents leakage through `repr(settings)`, tracebacks, or `model_dump_json()` output
+- Path-traversal guard on `tapeback process --name`: session names are now validated (only `[\w-]+` allowed) before being used as vault path components; vault I/O also verifies the resolved destination stays under `vault_path`
+- Atomic markdown writes: `save_markdown_to_vault` now uses write-temp + rename so Obsidian can't read a half-written transcript if tapeback crashes mid-write
+- Upper version bounds pinned on all dependencies (`<2`, `<3`, etc.) to prevent unreviewed major-version upgrades from breaking the build
 
 ### Added
 - Live transcription: Whisper transcribes audio in real-time during recording, writing a live markdown file to the vault that can be opened mid-meeting

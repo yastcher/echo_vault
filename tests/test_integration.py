@@ -5,6 +5,7 @@ import wave
 from unittest.mock import patch
 
 import pytest
+from pydantic import SecretStr
 
 from tapeback.audio import get_channel_count, merge_channels, split_channels_16k
 from tapeback.channel import (
@@ -21,6 +22,7 @@ from tapeback.formatter import format_markdown
 from tapeback.models import DiarizationSegment, Segment
 from tapeback.pipeline import _get_stereo_source, _maybe_diarize_segments
 from tapeback.settings import Settings
+from tapeback.vault import save_markdown_to_vault
 from tests.fixtures import create_mono_wav, create_stereo_wav, create_stereo_wav_segments
 
 
@@ -263,7 +265,7 @@ def test_get_stereo_source_detection(tmp_path):
 
 def test_diarization_unavailable_warning(tmp_vault):
     """Pipeline should warn when diarize=True but pyannote not installed."""
-    settings = Settings(vault_path=tmp_vault, diarize=True, hf_token="hf_fake")
+    settings = Settings(vault_path=tmp_vault, diarize=True, hf_token=SecretStr("hf_fake"))
     segments = [Segment(start=0.0, end=5.0, text="Hello.")]
     messages: list[str] = []
 
@@ -279,3 +281,34 @@ def test_diarization_unavailable_warning(tmp_vault):
 
     assert result == segments
     assert any("uv pip install tapeback[diarize]" in m for m in messages)
+
+
+# --- Atomic markdown write ---
+
+
+def test_save_markdown_to_vault_is_atomic(tmp_vault):
+    """On write failure, no partial .md file should be left in the vault."""
+    settings = Settings(vault_path=tmp_vault)
+    session = "2026-03-20_10-00-00"
+
+    with (
+        patch("tapeback.vault.os.replace", side_effect=OSError("disk full")),
+        pytest.raises(OSError, match="disk full"),
+    ):
+        save_markdown_to_vault("final content", settings, session)
+
+    # The final .md must not exist (rename never completed)
+    meetings_dir = tmp_vault / settings.meetings_dir
+    assert not (meetings_dir / f"{session}.md").exists()
+
+
+def test_save_markdown_to_vault_writes_full_content(tmp_vault):
+    """Successful write produces file with exact content and no .tmp residue."""
+    settings = Settings(vault_path=tmp_vault)
+    session = "2026-03-20_10-00-00"
+    content = "# Meeting\n\nHello world.\n"
+
+    md_path = save_markdown_to_vault(content, settings, session)
+
+    assert md_path.read_text(encoding="utf-8") == content
+    assert not md_path.with_suffix(".md.tmp").exists()

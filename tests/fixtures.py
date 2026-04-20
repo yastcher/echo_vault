@@ -7,6 +7,7 @@ from unittest.mock import MagicMock
 import numpy as np
 import pytest
 from click.testing import CliRunner
+from pydantic import SecretStr
 
 from tapeback.recorder import Recorder
 from tapeback.settings import Settings
@@ -124,7 +125,7 @@ def e2e_settings(tmp_path):
     vault.mkdir()
     return Settings(
         vault_path=vault,
-        hf_token=os.environ.get("TAPEBACK_HF_TOKEN", os.environ.get("HF_TOKEN", "")),
+        hf_token=SecretStr(os.environ.get("TAPEBACK_HF_TOKEN", os.environ.get("HF_TOKEN", ""))),
     )
 
 
@@ -134,7 +135,7 @@ def summarize_settings(tmp_vault):
     return Settings(
         vault_path=tmp_vault,
         llm_provider="anthropic",
-        llm_api_key="sk-ant-test-key",
+        llm_api_key=SecretStr("sk-ant-test-key"),
     )
 
 

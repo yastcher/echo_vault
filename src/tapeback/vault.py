@@ -1,8 +1,10 @@
 """Obsidian vault I/O — save audio and markdown to vault directories."""
 
+import os
 import shutil
 from pathlib import Path
 
+from tapeback.recorder import validate_session_name
 from tapeback.settings import Settings
 
 
@@ -23,6 +25,19 @@ def _unique_path(path: Path) -> Path:
         counter += 1
 
 
+def _ensure_within_vault(path: Path, vault_path: Path) -> None:
+    """Defence-in-depth: reject paths that resolve outside the vault root."""
+    if not path.resolve().is_relative_to(vault_path.resolve()):
+        raise ValueError(f"Refusing to write outside vault: {path}")
+
+
+def _atomic_write(path: Path, content: str) -> None:
+    """Write file atomically via temp + rename so readers never see a partial file."""
+    tmp_path = path.with_suffix(path.suffix + ".tmp")
+    tmp_path.write_text(content, encoding="utf-8")
+    os.replace(tmp_path, path)
+
+
 def save_audio_to_vault(
     audio_path: Path,
     settings: Settings,
@@ -34,10 +49,12 @@ def save_audio_to_vault(
     Does not overwrite existing files — adds _1, _2, etc. suffix.
     Returns path to the saved audio file.
     """
+    validate_session_name(session_name)
     attachments_dir = settings.vault_path / settings.attachments_dir
     attachments_dir.mkdir(parents=True, exist_ok=True)
 
     audio_dest = _unique_path(attachments_dir / f"{session_name}.wav")
+    _ensure_within_vault(audio_dest, settings.vault_path)
     shutil.copy2(audio_path, audio_dest)
 
     return audio_dest
@@ -54,28 +71,26 @@ def save_markdown_to_vault(
     Does not overwrite existing files — adds _1, _2, etc. suffix.
     Returns path to the markdown file.
     """
+    validate_session_name(session_name)
     meetings_dir = settings.vault_path / settings.meetings_dir
     meetings_dir.mkdir(parents=True, exist_ok=True)
 
     md_dest = _unique_path(meetings_dir / f"{session_name}.md")
-    md_dest.write_text(markdown, encoding="utf-8")
+    _ensure_within_vault(md_dest, settings.vault_path)
+    _atomic_write(md_dest, markdown)
 
     return md_dest
 
 
 def save_live_markdown(markdown: str, settings: Settings, session_name: str) -> Path:
-    """Write live transcript to vault, overwriting on each update.
-
-    Uses atomic write (temp file + rename) to prevent Obsidian from reading
-    a half-written file.
-    """
+    """Write live transcript to vault, overwriting on each update."""
+    validate_session_name(session_name)
     meetings_dir = settings.vault_path / settings.meetings_dir
     meetings_dir.mkdir(parents=True, exist_ok=True)
 
     md_path = meetings_dir / f"{session_name}_live.md"
-    tmp_path = md_path.with_suffix(".md.tmp")
-    tmp_path.write_text(markdown, encoding="utf-8")
-    tmp_path.rename(md_path)
+    _ensure_within_vault(md_path, settings.vault_path)
+    _atomic_write(md_path, markdown)
     return md_path
 
 

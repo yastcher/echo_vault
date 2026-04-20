@@ -8,6 +8,7 @@ import shutil
 from unittest.mock import MagicMock, patch
 
 import pytest
+from pydantic import SecretStr
 
 from tapeback.cli import cli
 from tapeback.models import Segment
@@ -175,7 +176,7 @@ def test_status_command(runner, vault_env):
 @pytest.mark.skipif(not shutil.which("ffmpeg"), reason="ffmpeg required")
 def test_stop_and_process_pipeline(tmp_vault, session_wavs):
     """_stop_and_process: full dual-channel pipeline with mocked ML models."""
-    settings = Settings(vault_path=tmp_vault, hf_token="hf_fake")
+    settings = Settings(vault_path=tmp_vault, hf_token=SecretStr("hf_fake"))
     session_dir, monitor_wav, mic_wav = session_wavs("2026-03-20_10-00-00")
 
     mock_recorder = MagicMock()
@@ -260,7 +261,7 @@ def test_maybe_diarize_skips_and_warns(tmp_path, tmp_vault):
     assert result is segments
 
     # No token
-    settings_no_token = Settings(vault_path=tmp_vault, hf_token="", diarize=True)
+    settings_no_token = Settings(vault_path=tmp_vault, hf_token=SecretStr(""), diarize=True)
     result = _maybe_diarize_segments(
         segments, settings_no_token, tmp_path / "a.wav", None, diarize=True
     )
@@ -351,7 +352,7 @@ def test_process_no_summarize_flag(runner, tmp_path, monkeypatch, vault_env):
 @pytest.mark.skipif(not shutil.which("ffmpeg"), reason="ffmpeg required")
 def test_stop_and_process_summarization_failure(tmp_vault, session_wavs):
     """LLM fails → warning printed, transcript still saved."""
-    settings = Settings(vault_path=tmp_vault, llm_api_key="sk-test")
+    settings = Settings(vault_path=tmp_vault, llm_api_key=SecretStr("sk-test"))
     _session_dir, monitor_wav, mic_wav = session_wavs("2026-03-20_12-00-00")
 
     mock_recorder = MagicMock()

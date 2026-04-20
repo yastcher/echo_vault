@@ -4,6 +4,7 @@ import shutil
 from unittest.mock import patch
 
 import pytest
+from pydantic import SecretStr
 
 from tapeback.pipeline import process_mono_file, process_stereo_file
 from tapeback.settings import Settings
@@ -48,7 +49,7 @@ def test_process_stereo_diarize_without_hf_token_returns_no_raw_segments(tmp_pat
     so raw_segments must be None (no duplicate section)."""
     vault = tmp_path / "vault"
     vault.mkdir()
-    settings = Settings(vault_path=vault, hf_token="")
+    settings = Settings(vault_path=vault, hf_token=SecretStr(""))
 
     stereo = tmp_path / "stereo.wav"
     create_stereo_wav_segments(stereo, 48000, [(1.0, 0.8, 0.003), (1.0, 0.003, 0.8)])

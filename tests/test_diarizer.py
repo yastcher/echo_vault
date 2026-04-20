@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
+from pydantic import SecretStr
 
 from tapeback.channel import (
     classify_segment_by_channel,
@@ -36,7 +37,7 @@ from tests.fixtures import (
 def test_diarizer_init_without_token(tmp_vault):
     """Diarizer should raise RuntimeError when hf_token is empty."""
 
-    settings = Settings(vault_path=tmp_vault, hf_token="")
+    settings = Settings(vault_path=tmp_vault, hf_token=SecretStr(""))
 
     with pytest.raises(RuntimeError, match="HuggingFace token required"):
         Diarizer(settings)
@@ -48,7 +49,7 @@ def test_diarizer_clustering_threshold(tmp_vault):
 
     # With threshold — should call instantiate
     settings_with = Settings(
-        vault_path=tmp_vault, hf_token="hf_fake", device="cpu", clustering_threshold=0.85
+        vault_path=tmp_vault, hf_token=SecretStr("hf_fake"), device="cpu", clustering_threshold=0.85
     )
     with patch("pyannote.audio.Pipeline") as mock_cls:
         mock_pipeline = MagicMock()
@@ -64,7 +65,7 @@ def test_diarizer_clustering_threshold(tmp_vault):
 
     # Without threshold — should not touch params
     settings_without = Settings(
-        vault_path=tmp_vault, hf_token="hf_fake", device="cpu", clustering_threshold=None
+        vault_path=tmp_vault, hf_token=SecretStr("hf_fake"), device="cpu", clustering_threshold=None
     )
     with patch("pyannote.audio.Pipeline") as mock_cls:
         mock_pipeline = MagicMock()
@@ -79,7 +80,7 @@ def test_diarizer_clustering_threshold(tmp_vault):
 def test_diarize_returns_segments(tmp_vault):
     """Diarizer.diarize should return list of DiarizationSegment."""
 
-    settings = Settings(vault_path=tmp_vault, hf_token="hf_fake", device="cpu")
+    settings = Settings(vault_path=tmp_vault, hf_token=SecretStr("hf_fake"), device="cpu")
 
     mock_turn_1 = MagicMock()
     mock_turn_1.start = 0.0

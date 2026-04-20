@@ -47,7 +47,25 @@ def test_settings_hf_token_from_env(monkeypatch, vault_env):
     monkeypatch.setenv("TAPEBACK_HF_TOKEN", "hf_test_token_123")
 
     s = Settings()
-    assert s.hf_token == "hf_test_token_123"
+    assert s.hf_token.get_secret_value() == "hf_test_token_123"
+
+
+def test_secrets_not_leaked_in_repr_or_dump(monkeypatch, vault_env):
+    """HF token and LLM API key must not appear in repr/str/model_dump output."""
+    monkeypatch.setenv("TAPEBACK_HF_TOKEN", "hf_supersecret_abc")
+    monkeypatch.setenv("TAPEBACK_LLM_API_KEY", "sk-ant-supersecret-xyz")
+
+    s = Settings()
+
+    assert "hf_supersecret_abc" not in repr(s)
+    assert "hf_supersecret_abc" not in str(s)
+    assert "hf_supersecret_abc" not in s.model_dump_json()
+    assert "sk-ant-supersecret-xyz" not in repr(s)
+    assert "sk-ant-supersecret-xyz" not in str(s)
+    assert "sk-ant-supersecret-xyz" not in s.model_dump_json()
+
+    assert s.hf_token.get_secret_value() == "hf_supersecret_abc"
+    assert s.llm_api_key.get_secret_value() == "sk-ant-supersecret-xyz"
 
 
 def test_settings_live_defaults(tmp_vault):
