@@ -20,6 +20,11 @@ TEMP_DIR = "/tmp/tapeback"
 # Sample rates
 SAMPLE_RATE_16K = 16000
 
+# Audio channel layout
+STEREO_CHANNELS = 2
+# Minimum kept sub-segment duration when splitting on silence without word timings
+MIN_SUB_SEGMENT_DURATION_SEC = 0.5
+
 # FFmpeg loudnorm parameters (EBU R128)
 LOUDNORM_PARAMS = "I=-16:TP=-1.5:LRA=11"
 
@@ -50,6 +55,12 @@ CHANNEL_DURATION_DIFF_WARN = 2.0
 
 # Minimum segment duration for output (seconds)
 MIN_SEGMENT_DURATION = 1.0
+
+# Live transcription
+FILE_LIVE_SUFFIX = "_live"
+WAV_HEADER_FALLBACK = 44
+WAV_CHUNK_HEADER_BYTES = 4  # RIFF chunk id / size fields are 4 bytes each
+RESAMPLE_FACTOR = 3  # 48000 / 16000
 
 # API base URLs for LLM providers
 API_BASE_GROQ = "https://api.groq.com/openai/v1"

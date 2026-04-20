@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
+from pydantic import SecretStr
 
 from tapeback.audio import split_channels_16k
 from tapeback.channel import (
@@ -31,7 +32,7 @@ def test_diarizer_passes_token_correctly(tmp_vault):
     Old code passed use_auth_token which caused TypeError.
     """
 
-    settings = Settings(vault_path=tmp_vault, hf_token="hf_test_123", device="cpu")
+    settings = Settings(vault_path=tmp_vault, hf_token=SecretStr("hf_test_123"), device="cpu")
 
     with patch("pyannote.audio.Pipeline") as mock_pipeline_cls:
         mock_pipeline_cls.from_pretrained.return_value = MagicMock()
@@ -50,7 +51,7 @@ def test_diarize_handles_diarize_output(tmp_vault):
     Code called .itertracks() directly which raised AttributeError.
     """
 
-    settings = Settings(vault_path=tmp_vault, hf_token="hf_fake_token", device="cpu")
+    settings = Settings(vault_path=tmp_vault, hf_token=SecretStr("hf_fake_token"), device="cpu")
 
     mock_turn = MagicMock()
     mock_turn.start = 0.0
@@ -82,7 +83,7 @@ def test_diarize_cuda_init_fallback(tmp_vault, capsys):
     Bug: Diarizer crashed if torch.device('cuda') failed.
     """
 
-    settings = Settings(vault_path=tmp_vault, hf_token="hf_fake_token", device="cuda")
+    settings = Settings(vault_path=tmp_vault, hf_token=SecretStr("hf_fake_token"), device="cuda")
 
     with patch("pyannote.audio.Pipeline") as mock_pipeline_cls:
         mock_pipeline = MagicMock()
@@ -103,7 +104,7 @@ def test_diarize_cuda_oom_fallback(tmp_vault, capsys):
     Pipeline loaded on CUDA but crashed with OutOfMemoryError during inference.
     """
 
-    settings = Settings(vault_path=tmp_vault, hf_token="hf_fake_token", device="cuda")
+    settings = Settings(vault_path=tmp_vault, hf_token=SecretStr("hf_fake_token"), device="cuda")
 
     mock_turn = MagicMock()
     mock_turn.start = 0.0

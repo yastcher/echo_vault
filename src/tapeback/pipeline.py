@@ -1,12 +1,19 @@
 """Processing pipeline shared between CLI and tray."""
 
-import gc
+from __future__ import annotations
+
 import shutil
 import tempfile
 from collections.abc import Callable
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from tapeback.live import LiveTranscriber
 
 from tapeback import const
+from tapeback._gpu import free_gpu_memory
+from tapeback._lazy import load_transcriber
 from tapeback.audio import convert_to_mono16k, get_channel_count, merge_channels, split_channels_16k
 from tapeback.channel import (
     classify_segment_by_channel,
@@ -24,10 +31,10 @@ from tapeback.diarizer import (
 )
 from tapeback.formatter import format_markdown
 from tapeback.models import Segment
-from tapeback.recorder import Recorder
+from tapeback.recorder import Recorder, validate_session_name
 from tapeback.settings import Settings
 from tapeback.summarizer import maybe_summarize
-from tapeback.vault import save_audio_to_vault, save_markdown_to_vault
+from tapeback.vault import remove_live_markdown, save_audio_to_vault, save_markdown_to_vault
 
 StatusCallback = Callable[[str], None]
 
@@ -40,14 +47,22 @@ def stop_and_process(
     recorder: Recorder,
     settings: Settings,
     *,
+    live_transcriber: LiveTranscriber | None = None,
     diarize: bool = True,
     do_summarize: bool = True,
     on_status: StatusCallback = _noop_status,
 ) -> Path:
     """Stop recording and run the full dual-channel processing pipeline.
 
+    If a live_transcriber is active, stops it first to free GPU memory
+    before the full pipeline creates its own Whisper model.
+
     Returns path to the saved markdown file.
     """
+    if live_transcriber is not None:
+        on_status("Stopping live transcription...")
+        live_transcriber.stop()
+
     on_status("Stopping recording...")
     monitor_path, mic_path = recorder.stop()
 
@@ -78,6 +93,9 @@ def stop_and_process(
     md_path = save_markdown_to_vault(markdown, settings, session_name)
     on_status(f"Saved: {md_path}")
 
+    if live_transcriber is not None:
+        remove_live_markdown(settings, session_name)
+
     if do_summarize:
         _maybe_summarize(md_path, settings, on_status)
 
@@ -97,6 +115,7 @@ def process_file(
     """Process an existing audio file. Returns path to saved markdown."""
     if name is None:
         name = audio_path.stem
+    validate_session_name(name)
 
     audio_dest = save_audio_to_vault(audio_path, settings, name)
     on_status(f"Audio saved: {audio_dest}")
@@ -137,7 +156,7 @@ def process_file(
 def is_stereo(audio_path: Path) -> bool:
     """Check if an audio file is a stereo WAV."""
     try:
-        return get_channel_count(audio_path) == 2
+        return get_channel_count(audio_path) == const.STEREO_CHANNELS
     except Exception:  # noqa: S110 — non-WAV or unreadable files are expected
         pass
     return False
@@ -150,21 +169,19 @@ def process_stereo_file(
     *,
     diarize: bool,
     on_status: StatusCallback = _noop_status,
-) -> tuple[list[Segment], dict[str, str | float], list[Segment]]:
+) -> tuple[list[Segment], dict[str, str | float], list[Segment] | None]:
     """Process a stereo WAV through the dual-channel pipeline.
 
     Returns (diarized_segments, info, raw_segments).
     raw_segments have basic You/Other attribution (channel-based, no diarization).
     """
-    from tapeback.transcriber import Transcriber  # noqa: PLC0415 — 10s import, must stay lazy
-
     mic_raw, monitor_raw, raw_sr = load_stereo_channels(stereo_path)
 
     on_status("Splitting channels...")
     mic_16k, monitor_16k = split_channels_16k(stereo_path, output_dir)
 
     on_status("Transcribing (this may take a few minutes)...")
-    transcriber = Transcriber(settings)
+    transcriber = load_transcriber(settings)
     mic_segments, monitor_segments, info = transcriber.transcribe_stereo(mic_16k, monitor_16k)
 
     mic_segments = split_on_silence(
@@ -196,7 +213,7 @@ def process_stereo_file(
     free_gpu_memory()
 
     diarized = False
-    if diarize and settings.diarize and settings.hf_token:
+    if diarize and settings.diarize and settings.hf_token.get_secret_value():
         if not diarization_available():
             on_status(
                 "Warning: pyannote-audio not installed, skipping diarization. "
@@ -229,7 +246,8 @@ def process_stereo_file(
         ]
 
     segments = merge_channel_segments(mic_segments, monitor_segments)
-    return segments, info, raw_segments
+    # Without diarization, raw_segments == segments — skip the duplicate section.
+    return segments, info, raw_segments if diarized else None
 
 
 def process_mono_file(
@@ -239,18 +257,16 @@ def process_mono_file(
     *,
     diarize: bool,
     on_status: StatusCallback = _noop_status,
-) -> tuple[list[Segment], dict[str, str | float], list[Segment]]:
+) -> tuple[list[Segment], dict[str, str | float], list[Segment] | None]:
     """Process a mono/non-stereo audio file through the single-channel pipeline.
 
     Returns (diarized_segments, info, raw_segments).
     """
-    from tapeback.transcriber import Transcriber  # noqa: PLC0415 — 10s import, must stay lazy
-
     on_status("Converting audio...")
     mono_16k_path = convert_to_mono16k(audio_path, output_dir)
 
     on_status("Transcribing (this may take a few minutes)...")
-    transcriber = Transcriber(settings)
+    transcriber = load_transcriber(settings)
     segments, info = transcriber.transcribe(mono_16k_path)
 
     # Raw transcript before diarization
@@ -260,6 +276,7 @@ def process_mono_file(
     free_gpu_memory()
 
     stereo_for_attribution = _get_stereo_source(audio_path)
+    segments_before = segments
     segments = _maybe_diarize_segments(
         segments,
         settings,
@@ -269,19 +286,10 @@ def process_mono_file(
         on_status=on_status,
     )
 
-    return segments, info, raw_segments
-
-
-def free_gpu_memory() -> None:
-    """Free GPU memory so diarizer can use CUDA."""
-    gc.collect()
-    try:
-        import torch  # noqa: PLC0415 — optional dependency, guarded by try/except
-
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-    except ImportError:
-        pass
+    # _maybe_diarize_segments returns the same list reference when it skips
+    # diarization — use identity to tell whether the raw section is a duplicate.
+    diarized = segments is not segments_before
+    return segments, info, raw_segments if diarized else None
 
 
 def _maybe_diarize_segments(
@@ -297,7 +305,7 @@ def _maybe_diarize_segments(
     if not diarize or not settings.diarize:
         return segments
 
-    if not settings.hf_token:
+    if not settings.hf_token.get_secret_value():
         on_status(
             "Warning: TAPEBACK_HF_TOKEN not set, skipping diarization. "
             "See README for setup instructions."
@@ -325,7 +333,7 @@ def _maybe_diarize_segments(
 def _get_stereo_source(audio_path: Path) -> Path | None:
     """Return audio_path if it's a stereo WAV, else None."""
     try:
-        if get_channel_count(audio_path) == 2:
+        if get_channel_count(audio_path) == const.STEREO_CHANNELS:
             return audio_path
     except Exception:  # noqa: S110 — non-stereo or unreadable files are expected
         pass

@@ -132,6 +132,7 @@ class Transcriber:
             chunk_length=self._settings.chunk_length,
             word_timestamps=True,
             condition_on_previous_text=self._settings.condition_on_previous_text,
+            no_speech_threshold=self._settings.no_speech_threshold,
         )
 
         segments: list[Segment] = []
@@ -142,12 +143,13 @@ class Transcriber:
                 self._fallback_to_cpu()
                 segments_iter, info = self._model.transcribe(
                     str(audio_path),
-                    language=self._settings.language,
+                    language=language,
                     beam_size=self._settings.beam_size,
                     vad_filter=self._settings.vad_filter,
                     chunk_length=self._settings.chunk_length,
                     word_timestamps=True,
                     condition_on_previous_text=self._settings.condition_on_previous_text,
+                    no_speech_threshold=self._settings.no_speech_threshold,
                 )
                 segments = self._collect_segments(segments_iter)
             else:

@@ -78,6 +78,48 @@ def test_cuda_inference_fallback_to_cpu(tmp_vault, capsys):
     assert "CUDA runtime error" in captured.err
 
 
+def test_cuda_inference_fallback_preserves_auto_language(tmp_vault):
+    """CPU fallback must pass language=None (not "auto" string) when auto-detection is on.
+
+    Bug: transcriber.py line 145 used self._settings.language ("auto") instead
+    of the resolved variable (None). Whisper doesn't accept "auto" as a language code.
+    """
+    s = Settings(vault_path=tmp_vault, compute_type="float16", language="auto")
+
+    mock_segment = MagicMock()
+    mock_segment.start = 0.0
+    mock_segment.end = 5.0
+    mock_segment.text = "Привет"
+    mock_segment.words = []
+
+    mock_info = MagicMock()
+    mock_info.language = "ru"
+    mock_info.language_probability = 0.99
+    mock_info.duration = 5.0
+
+    def failing_iter():
+        raise RuntimeError("CUDA OOM")
+        yield  # make it a generator
+
+    with patch("tapeback.transcriber.WhisperModel") as mock_model_cls:
+        cuda_model = MagicMock()
+        cpu_model = MagicMock()
+        mock_model_cls.side_effect = [cuda_model, cpu_model]
+
+        cuda_model.transcribe.return_value = (failing_iter(), mock_info)
+        cpu_model.transcribe.return_value = (iter([mock_segment]), mock_info)
+
+        transcriber = Transcriber(s)
+        segments, info = transcriber.transcribe(Path("/fake/audio.wav"))
+
+    # CPU retry must pass language=None (auto-detect), not "auto" string
+    retry_kwargs = cpu_model.transcribe.call_args.kwargs
+    assert retry_kwargs["language"] is None
+
+    assert len(segments) == 1
+    assert info["language"] == "ru"
+
+
 def test_empty_transcription(settings, capsys):
     """Empty transcription result should return empty list with warning.
 

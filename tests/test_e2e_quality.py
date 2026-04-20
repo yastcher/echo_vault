@@ -49,7 +49,7 @@ def test_stereo_pipeline_with_diarization(e2e_settings, e2e_output_dir):
     The monitor channel has ONE speaker (video narrator) — diarization
     should not split it into multiple speakers.
     """
-    if not e2e_settings.hf_token:
+    if not e2e_settings.hf_token.get_secret_value():
         pytest.skip("TAPEBACK_HF_TOKEN required for diarization test")
 
     segments, _info, _raw = process_stereo_file(

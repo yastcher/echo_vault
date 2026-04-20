@@ -11,6 +11,7 @@ Works with any video call platform: Google Meet, Zoom, Teams, Telegram, Discord,
 
 ## Features
 
+- **Live transcription**: read the transcript while the meeting is still going — Whisper transcribes in the background every 60 seconds
 - **Platform-agnostic**: captures OS-level audio, works with any app
 - **Local transcription**: faster-whisper on CPU or CUDA GPU
 - **Speaker diarization**: pyannote identifies who said what
@@ -176,6 +177,7 @@ tapeback status                    Show recording status and settings
 ```
 
 ```bash
+tapeback start --no-live           # disable live transcription (old mode)
 tapeback start --no-diarize        # skip speaker identification
 tapeback start --no-summarize      # skip LLM summary
 tapeback process meeting.mp3 --name "weekly-standup"
@@ -258,12 +260,22 @@ All settings via environment variables (prefix `TAPEBACK_`) or
 | Variable | Default | Description |
 |---|---|---|
 | `TAPEBACK_WHISPER_MODEL` | `large-v3-turbo` | Whisper model (`tiny`, `base`, `small`, `medium`, `large-v3-turbo`) |
-| `TAPEBACK_LANGUAGE` | `en` | Transcription language code |
+| `TAPEBACK_LANGUAGE` | `auto` | Language code (`auto` for auto-detection, or `en`, `ru`, `fr`, etc.) |
 | `TAPEBACK_DEVICE` | `cuda` | `cuda` or `cpu` |
 | `TAPEBACK_COMPUTE_TYPE` | `auto` | `auto`, `float16`, `int8`, or `float32` (`auto` picks `int8` when free VRAM < 4 GiB) |
 | `TAPEBACK_BEAM_SIZE` | `5` | Whisper beam search width |
-| `TAPEBACK_CHUNK_LENGTH` | `2` | Max VAD chunk (seconds) before splitting for Whisper; prevents lost speech after long pauses |
+| `TAPEBACK_CHUNK_LENGTH` | `7` | Max VAD chunk (seconds) before splitting for Whisper; prevents lost speech after long pauses |
+| `TAPEBACK_NO_SPEECH_THRESHOLD` | `0.4` | Whisper silence-rejection threshold (lower = more aggressive; suppresses training-data hallucinations on pauses) |
 | `TAPEBACK_PAUSE_THRESHOLD` | `1.0` | Seconds; split segments on silence gaps >= this |
+
+### Live transcription
+
+| Variable | Default | Description |
+|---|---|---|
+| `TAPEBACK_LIVE` | `true` | Enable live transcription during recording |
+| `TAPEBACK_LIVE_INTERVAL` | `60` | Seconds between transcription cycles |
+| `TAPEBACK_LIVE_OVERLAP` | `2.0` | Seconds of overlap between chunks |
+| `TAPEBACK_LIVE_MIN_CHUNK` | `5.0` | Minimum new audio (seconds) to trigger transcription |
 
 ### Audio
 
@@ -310,7 +322,6 @@ rm -rf ~/.cache/huggingface/
 ## Roadmap
 
 - **Speaker profiles**: learn and remember recurring speakers across meetings
-- **Real-time transcription**: live streaming with partial results
 - **Multi-language meetings**: detect and handle language switches mid-meeting
 - **Windows support**: WASAPI loopback capture
 

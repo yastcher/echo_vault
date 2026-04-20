@@ -5,6 +5,36 @@ All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.0] — 2026-04-20
+
+### Security
+- `hf_token` and `llm_api_key` now stored as `pydantic.SecretStr` — prevents leakage through `repr(settings)`, tracebacks, or `model_dump_json()` output
+- Path-traversal guard on `tapeback process --name`: session names are now validated (only `[\w-]+` allowed) before being used as vault path components; vault I/O also verifies the resolved destination stays under `vault_path`
+- Atomic markdown writes: `save_markdown_to_vault` now uses write-temp + rename so Obsidian can't read a half-written transcript if tapeback crashes mid-write
+- Upper version bounds pinned on all dependencies (`<2`, `<3`, etc.) to prevent unreviewed major-version upgrades from breaking the build
+
+### Added
+- Live transcription: Whisper transcribes audio in real-time during recording, writing a live markdown file to the vault that can be opened mid-meeting
+- `--no-live` CLI flag to disable live transcription and use the old post-recording-only mode
+- `TAPEBACK_LIVE` setting (default `true`) — enable/disable live transcription
+- `TAPEBACK_LIVE_INTERVAL` setting (default `60`) — seconds between transcription cycles
+- `TAPEBACK_LIVE_OVERLAP` setting (default `2.0`) — seconds of overlap between chunks for seamless transitions
+- `TAPEBACK_LIVE_MIN_CHUNK` setting (default `5.0`) — minimum new audio (seconds) before triggering a transcription cycle
+- `TAPEBACK_NO_SPEECH_THRESHOLD` setting (default `0.4`) — Whisper silence-rejection threshold; lower values suppress training-data hallucinations like "Субтитры DimaTorzok" on long pauses
+
+### Fixed
+- CPU fallback lost auto language detection: passed `"auto"` string to Whisper instead of `None`, causing errors on non-English transcripts
+- Duplicate "## Diarized Transcript" section when diarization was skipped (via `--no-diarize` or missing HF token) — both sections were identical; now only "## Transcript" is rendered
+- Whisper hallucinations on long pauses (e.g. "Субтитры DimaTorzok", "Продолжение следует") — `no_speech_threshold` now set to `0.4` (stricter than Whisper's default `0.6`)
+
+### Changed
+- Settings now fail-fast on invalid values: thresholds must be in `[0, 1]`, `pause_threshold` / `live_overlap` must be non-negative, `live_interval` / `live_min_chunk` must be positive, and `live_min_chunk` must be ≤ `live_interval` when live transcription is enabled — surfaced via `pydantic.ValidationError` at `get_settings()` instead of silent mis-behaviour deep in the pipeline
+- Internal refactor: extracted `tapeback._gpu` (CUDA memory helper), `tapeback._lazy` (single lazy-load site for `Transcriber`), and `tapeback.speaker_merge` (spectral clustering) — no user-visible change, but `diarizer.py` and `channel.py` are now under the 500-line limit and no longer need `PLR0912` / `PLR0915` ignores
+- Default language changed from `en` to `auto` — Whisper now auto-detects the spoken language
+- `tapeback start` now detects when recording stops (e.g. via `tapeback stop`) using a polling loop instead of `signal.pause()`
+- `TAPEBACK_CHUNK_LENGTH` default raised from `2` to `7`: 2-second chunks fragment Whisper's context and cause hallucinations and broken sentences on non-English speech; `7` balances context against hallucination risk on long pauses
+- Low-confidence word threshold (italic marker) lowered from `0.5` to `0.35`: fewer false positives on English loanwords inside Russian/mixed-language speech
+
 ## [0.8.10] — 2026-04-04
 
 ### Fixed

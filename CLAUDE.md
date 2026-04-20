@@ -94,7 +94,7 @@ Do not duplicate ruff rules here — if ruff can check it, ruff owns it.
 0. `git diff --stat` — assess scope of changes
 1. `uv run ruff check --fix`
 2. `uv run ruff format`
-3. `uv run mypy`
+3. `uv run ty check`
 4. `uv run pytest`
 5. Security review (see checklist below)
 6. **Always update README.md** when features, settings, commands, or architecture change
