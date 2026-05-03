@@ -119,41 +119,23 @@ class Transcriber:
         """Transcribe audio file.
 
         Returns (list of Segments, info dict with language/duration/etc).
-        Falls back to CPU if CUDA fails during inference.
+        Falls back to CPU if CUDA fails — either when calling transcribe()
+        (eager language detection raises before yielding) or while iterating
+        the segment generator.
         """
         # "auto" → None lets faster-whisper auto-detect language
         language = self._settings.language if self._settings.language != "auto" else None
 
-        segments_iter, info = self._model.transcribe(
-            str(audio_path),
-            language=language,
-            beam_size=self._settings.beam_size,
-            vad_filter=self._settings.vad_filter,
-            chunk_length=self._settings.chunk_length,
-            word_timestamps=True,
-            condition_on_previous_text=self._settings.condition_on_previous_text,
-            no_speech_threshold=self._settings.no_speech_threshold,
-        )
-
         segments: list[Segment] = []
         try:
+            segments_iter, info = self._invoke_transcribe(audio_path, language)
             segments = self._collect_segments(segments_iter)
         except RuntimeError:
-            if self._device == "cuda":
-                self._fallback_to_cpu()
-                segments_iter, info = self._model.transcribe(
-                    str(audio_path),
-                    language=language,
-                    beam_size=self._settings.beam_size,
-                    vad_filter=self._settings.vad_filter,
-                    chunk_length=self._settings.chunk_length,
-                    word_timestamps=True,
-                    condition_on_previous_text=self._settings.condition_on_previous_text,
-                    no_speech_threshold=self._settings.no_speech_threshold,
-                )
-                segments = self._collect_segments(segments_iter)
-            else:
+            if self._device != "cuda":
                 raise
+            self._fallback_to_cpu()
+            segments_iter, info = self._invoke_transcribe(audio_path, language)
+            segments = self._collect_segments(segments_iter)
 
         if not segments:
             print("Warning: No speech detected in audio", file=sys.stderr)
@@ -165,6 +147,19 @@ class Transcriber:
         }
 
         return segments, info_dict
+
+    def _invoke_transcribe(self, audio_path: Path, language: str | None) -> tuple[Any, Any]:
+        """Single point that calls into faster-whisper with the configured args."""
+        return self._model.transcribe(
+            str(audio_path),
+            language=language,
+            beam_size=self._settings.beam_size,
+            vad_filter=self._settings.vad_filter,
+            chunk_length=self._settings.chunk_length,
+            word_timestamps=True,
+            condition_on_previous_text=self._settings.condition_on_previous_text,
+            no_speech_threshold=self._settings.no_speech_threshold,
+        )
 
     def transcribe_stereo(
         self, mic_16k: Path, monitor_16k: Path

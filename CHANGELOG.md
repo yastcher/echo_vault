@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.1] — 2026-05-03
+
+### Fixed
+- CPU fallback didn't trigger when faster-whisper raised `RuntimeError` (e.g. `Library libcublas.so.12 is not found`) synchronously from `transcribe()` — eager language detection raises before yielding the segment generator, so the previous fallback (which only wrapped iteration) missed it. Both call-time and iteration-time CUDA failures now fall back to CPU and the recording survives.
+
 ## [0.9.0] — 2026-04-20
 
 ### Security

@@ -78,6 +78,52 @@ def test_cuda_inference_fallback_to_cpu(tmp_vault, capsys):
     assert "CUDA runtime error" in captured.err
 
 
+def test_cuda_fallback_when_transcribe_call_raises(tmp_vault, capsys):
+    """faster-whisper raises RuntimeError synchronously from transcribe() (before iteration).
+
+    Bug: missing libcublas.so.12 makes faster-whisper raise during eager language
+    detection inside transcribe() itself — not while iterating the segment generator.
+    The previous fallback only wrapped _collect_segments(), so this error escaped
+    and aborted the recording.
+    """
+    s = Settings(vault_path=tmp_vault, compute_type="float16")
+
+    mock_segment = MagicMock()
+    mock_segment.start = 0.0
+    mock_segment.end = 5.0
+    mock_segment.text = "Hello"
+    mock_segment.words = []
+
+    mock_info = MagicMock()
+    mock_info.language = "en"
+    mock_info.language_probability = 0.99
+    mock_info.duration = 5.0
+
+    with patch("tapeback.transcriber.WhisperModel") as mock_model_cls:
+        cuda_model = MagicMock()
+        cpu_model = MagicMock()
+        mock_model_cls.side_effect = [cuda_model, cpu_model]
+
+        cuda_model.transcribe.side_effect = RuntimeError(
+            "Library libcublas.so.12 is not found or cannot be loaded"
+        )
+        cpu_model.transcribe.return_value = (iter([mock_segment]), mock_info)
+
+        transcriber = Transcriber(s)
+        segments, info = transcriber.transcribe(Path("/fake/audio.wav"))
+
+    assert mock_model_cls.call_count == 2
+    assert mock_model_cls.call_args_list[1] == call(
+        s.whisper_model, device="cpu", compute_type="int8"
+    )
+    assert len(segments) == 1
+    assert segments[0].text == "Hello"
+    assert info["duration"] == 5.0
+
+    captured = capsys.readouterr()
+    assert "CUDA runtime error" in captured.err
+
+
 def test_cuda_inference_fallback_preserves_auto_language(tmp_vault):
     """CPU fallback must pass language=None (not "auto" string) when auto-detection is on.
 
